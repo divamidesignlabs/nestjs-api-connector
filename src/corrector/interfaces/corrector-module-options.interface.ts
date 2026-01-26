@@ -1,14 +1,39 @@
-import { MappingConfig } from './mapping-config.interface';
+import { IMappingRepository } from './mapping-repository.interface';
+import { IAuditRepository } from './audit-repository.interface';
 
 export interface CorrectorModuleOptions {
   /**
-   * Optional custom entity class. Must extend at least the fields required by MappingRegistry.
-   * If not provided, the default IntegrationMapping entity will be used.
+   * Direct instance of IMappingRepository (use this for simple cases)
    */
-  entity?: any;
+  mappingRepository?: IMappingRepository;
 
   /**
-   * Other configuration options can go here (e.g. global timeout, retry settings)
+   * Factory for creating IMappingRepository (use this for dependency injection)
+   */
+  mappingRepositoryFactory?: {
+    useFactory: (
+      ...args: any[]
+    ) => IMappingRepository | Promise<IMappingRepository>;
+    inject?: any[];
+  };
+
+  /**
+   * Direct instance of IAuditRepository (use this for simple cases)
+   */
+  auditRepository?: IAuditRepository;
+
+  /**
+   * Factory for creating IAuditRepository (use this for dependency injection)
+   */
+  auditRepositoryFactory?: {
+    useFactory: (
+      ...args: any[]
+    ) => IAuditRepository | Promise<IAuditRepository>;
+    inject?: any[];
+  };
+
+  /**
+   * Optional: Global timeout in milliseconds
    */
   globalTimeoutMs?: number;
 }

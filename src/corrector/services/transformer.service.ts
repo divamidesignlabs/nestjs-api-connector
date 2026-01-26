@@ -3,6 +3,7 @@ import * as jsonpath from 'jsonpath';
 import {
   RequestMapping,
   ResponseMapping,
+  TransformDefinition,
 } from '../interfaces/mapping-config.interface';
 
 @Injectable()
@@ -12,8 +13,8 @@ export class TransformerService {
   // Core transform entry
   transform(
     sourceData: any,
-    mapping: any,
-    customTransforms?: Record<string, any>,
+    mapping: RequestMapping | ResponseMapping,
+    customTransforms?: Record<string, TransformDefinition>,
   ): any {
     if (!mapping) {
       return sourceData;
@@ -35,45 +36,51 @@ export class TransformerService {
 
   private transformArray(
     source: any,
-    mapping: any,
-    customTransforms?: Record<string, any>,
+    mapping: ResponseMapping,
+    customTransforms?: Record<string, TransformDefinition>,
   ): any {
-    const rootArray = this.getValue(source, mapping.root);
+    if (!mapping.root) return [];
+    const rootArray = this.getValue(source, mapping.root) as any[];
 
     if (!Array.isArray(rootArray)) {
       this.logger.warn(`Root path ${mapping.root} did not resolve to an array`);
       return [];
     }
 
-    const transformedList = rootArray.map((item) => {
+    const transformedList = rootArray.map((item: any) => {
       // Create a temporary mapping config for the item, treating it as an object mapping
-      const itemMapping = { ...mapping, type: 'OBJECT', root: undefined }; // Reset root for recursing
-      // We pass 'item' as source. Note: JSONPath usually works on root,
-      // but for array mapping, we often want relative paths.
-      // Implementing relative path support by treating 'item' as the new root source.
-      return this.transformObject(item, itemMapping, customTransforms);
+      const itemMapping: ResponseMapping = {
+        ...mapping,
+        type: 'OBJECT',
+        root: undefined,
+      }; // Reset root for recursing
+      return this.transformObject(
+        item,
+        itemMapping,
+        customTransforms,
+      ) as unknown;
     });
 
     if (mapping.outputWrapper) {
       const result = {};
       this.setValue(result, mapping.outputWrapper, transformedList);
-      return result;
+      return result as unknown;
     }
 
-    return transformedList;
+    return transformedList as unknown;
   }
 
   private transformObject(
     source: any,
-    mapping: any,
-    customTransforms?: Record<string, any>,
+    mapping: RequestMapping | ResponseMapping,
+    customTransforms?: Record<string, TransformDefinition>,
   ): any {
     const result = {};
 
     if (mapping.mappings) {
       for (const mapItem of mapping.mappings) {
         try {
-          let value: any;
+          let value: unknown;
           const conditionPassed =
             !mapItem.condition ||
             this.evaluateCondition(source, mapItem.condition);
@@ -82,22 +89,22 @@ export class TransformerService {
             if (conditionPassed) {
               value =
                 mapItem.valueIfTrue !== undefined
-                  ? mapItem.valueIfTrue
-                  : jsonpath.value(source, mapItem.source);
+                  ? (mapItem.valueIfTrue as unknown)
+                  : (jsonpath.value(source, mapItem.source) as unknown);
             } else {
               if (mapItem.valueIfFalse !== undefined) {
-                value = mapItem.valueIfFalse;
+                value = mapItem.valueIfFalse as unknown;
               } else {
                 continue; // Skip if no false value provided
               }
             }
           } else {
-            value = jsonpath.value(source, mapItem.source);
+            value = jsonpath.value(source, mapItem.source) as unknown;
           }
 
           // Handle default if source path is missing
           if (value === undefined) {
-            value = mapItem.default;
+            value = mapItem.default as unknown;
           }
 
           // STRICT VALIDATION: Check if field is required but missing
@@ -110,15 +117,16 @@ export class TransformerService {
               value,
               mapItem.transform,
               customTransforms,
-            );
+            ) as unknown;
           }
 
           if (value !== undefined) {
             this.setValue(result, mapItem.target, value);
           }
-        } catch (error) {
+        } catch (error: unknown) {
+          const err = error as { message?: string };
           this.logger.warn(
-            `Mapping failed for ${mapItem.source}: ${error.message}`,
+            `Mapping failed for ${mapItem.source}: ${err.message || 'Unknown error'}`,
           );
         }
       }
@@ -133,7 +141,7 @@ export class TransformerService {
       }
     }
 
-    return result;
+    return result as unknown;
   }
 
   private evaluateCondition(data: any, condition: string): boolean {
@@ -142,7 +150,9 @@ export class TransformerService {
       const [path, val] = condition
         .split('==')
         .map((s) => s.trim().replace(/^['"]|['"]$/g, ''));
-      return String(this.getValue(data, path)) === val;
+      if (path) {
+        return String(this.getValue(data, path)) === val;
+      }
     }
     return !!this.getValue(data, condition);
   }
@@ -150,7 +160,7 @@ export class TransformerService {
   private applyTransform(
     value: any,
     transformName: string,
-    customTransforms?: Record<string, any>,
+    customTransforms?: Record<string, TransformDefinition>,
   ): any {
     // 1. Built-in transforms
     switch (transformName) {
@@ -184,35 +194,40 @@ export class TransformerService {
       // Safe(ish) functionality: new Function('value', body)
       // Ensure logicBody is just the inner logic.
       // Example: "return value + 1;"
+      /* eslint-disable @typescript-eslint/no-implied-eval */
       const fn = new Function('value', logicBody);
+      /* eslint-disable @typescript-eslint/no-unsafe-call */
       return fn(value);
-    } catch (e) {
-      this.logger.error(`Custom transform error: ${e.message}`);
-      return { error: `Script Error: ${e.message}` };
+    } catch (e: any) {
+      const error = e as { message?: string };
+      this.logger.error(
+        `Custom transform error: ${error.message || 'Unknown error'}`,
+      );
+      return { error: `Script Error: ${error.message || 'Unknown error'}` };
     }
   }
 
   private setValue(obj: any, path: string, value: any): void {
     const cleanPath = path.startsWith('$.') ? path.slice(2) : path;
     const parts = cleanPath.split('.');
-    let current = obj;
+    let current = obj as Record<string, any>;
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
-      if (!current[part]) current[part] = {};
-      current = current[part];
+      if (part) {
+        if (!current[part]) current[part] = {};
+        current = current[part] as Record<string, any>;
+      }
     }
-    current[parts[parts.length - 1]] = value;
+    const lastPart = parts[parts.length - 1];
+    if (lastPart) {
+      current[lastPart] = value as unknown;
+    }
   }
 
   private getValue(obj: any, path: string): any {
     try {
-      // If the path is relative (doesn't start with $), prepend it for jsonpath
-      // But strict jsonpath usually requires $, so we ensure it starts with $.
-      // However, for array iteration 'obj' is an item.
-      // Standard jsonpath.value(item, "$.name") works fine if "$.name" refers to properties of item.
-      // Note: jsonpath behavior on non-root objects might vary if path implies root.
       return jsonpath.value(obj, path);
-    } catch (e) {
+    } catch {
       return undefined;
     }
   }

@@ -6,7 +6,10 @@ async function bootstrap() {
   // Enable global prefix if needed, currently direct mapping
   // app.setGlobalPrefix('api');
 
-  await app.listen(3000);
-  console.log(`Application is running on: ${await app.getUrl()}`);
+  const port = process.env.PORT || 3001;
+  await app.listen(port);
+  console.log(`Application is running on port: ${port}`);
 }
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Error during bootstrap:', err);
+});

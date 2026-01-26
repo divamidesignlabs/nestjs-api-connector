@@ -1,18 +1,23 @@
-# NestJS API Corrector
+# 🚀 NestJS API Corrector
 
-[![npm-version](https://img.shields.io/npm/v/nestjs-api-corrector.svg)](https://www.npmjs.com/package/nestjs-api-corrector)
-[![npm-downloads](https://img.shields.io/npm/dm/nestjs-api-corrector.svg)](https://www.npmjs.com/package/nestjs-api-corrector)
+**A configuration-driven API integration framework for NestJS.**
 
-**NestJS API Corrector** is a powerful, configuration-driven library designed to act as an intelligent API Gateway or Proxy within your NestJS ecosystem. It transforms source JSON requests into target API requests, injects dynamic authentication, and converts target API responses back into a desired source format using JSONPath and custom logic.
+[![npm version](https://badge.fury.io/js/nestjs-api-corrector.svg)](https://badge.fury.io/js/nestjs-api-corrector)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🚀 Key Features
+**nestjs-api-corrector** acts as an intelligent bridge between your application and external APIs. Instead of writing endless HTTP Services and DTOs, you define integrations in your database.
 
-*   **JSONPath-based Mapping**: Effortlessly map fields between source and target systems using declarative JSONPath syntax.
-*   **Dynamic Authentication**: Pluggable strategies for **OAuth2**, **Bearer Tokens**, **Basic Auth**, and **API Keys** with automatic token generation, caching, and refresh.
-*   **Polymorphic Response Handling**: Built-in support for `CUSTOM` JavaScript scripts to handle APIs that return different structures (e.g., Array vs. Object) based on result counts.
-*   **Transparent Proxying**: Automatically merges query parameters and preserves HTTP methods (GET, POST, PUT, DELETE) from the source request.
-*   **Custom Entity Support**: Extend the base mapping entity to include your own business logic or metadata fields in the database.
-*   **Error Standardizing**: Mask sensitive target API errors and return standardized, user-friendly responses to your clients.
+---
+
+## ✨ Features
+
+*   **Dynamic Configuration**: Define API endpoints, methods, and auth in your DB.
+*   **Zero-Code Updates**: Change target URLs or field mappings without redeploying code.
+*   **Authentication**: Built-in support for Bearer, Basic, and Custom Auth strategies.
+*   **Transformation**: Transform requests and responses using JSONPath or Custom JS.
+*   **Validation**: Validate inputs and outputs using JSON Schema.
+*   **Resilience**: Centralized error handling and auditing.
+*   **Database Agnostic**: Comes with TypeORM support out-of-the-box, but easy to adapt.
 
 ---
 
@@ -22,42 +27,98 @@
 npm install nestjs-api-corrector
 ```
 
-## 🛠️ Getting Started
+---
+
+## 🛠️ Usage
 
 ### 1. Database Setup
-The framework uses a PostgreSQL table to persist mapping configurations. Run the `database_init.sql` script (found in the package root) to create the `integration_mappings_config` table and seed it with initial verified mappings.
 
-### 2. Register the Entity
-Register the `IntegrationMapping` entity in your `TypeOrmModule` configuration:
+You need two tables: `integration_mappings_config` and `corrector_audit_logs`.
+If you are using PostgreSQL, you can run the included initialization script:
+
+```sql
+-- See database_init.sql in the package or documentation
+```
+
+### 2. Import Module in `AppModule`
+
+#### A. Using TypeORM (Recommended)
+If you already use TypeORM, we provide ready-to-use repositories and entities.
 
 ```typescript
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { IntegrationMapping } from 'nestjs-api-corrector';
+import { DataSource } from 'typeorm';
+import { 
+  CorrectorModule, 
+  TypeOrmMappingRepository, 
+  TypeOrmAuditRepository, 
+  IntegrationMappingEntity, 
+  CorrectorAuditEntity 
+} from 'nestjs-api-corrector';
 
 @Module({
   imports: [
+    // 1. Configure your TypeORM connection
     TypeOrmModule.forRoot({
       type: 'postgres',
-      // ... other config
-      entities: [IntegrationMapping, ...yourEntities],
+      host: 'localhost',
+      port: 5432,
+      username: 'postgres',
+      password: 'password',
+      database: 'my_db',
+      entities: [
+         // Add Corrector entities here
+         IntegrationMappingEntity,
+         CorrectorAuditEntity, 
+         // ... your other entities
+      ],
+      synchronize: true, // Auto-create tables (Dev only)
+    }),
+
+    // 2. Configure Corrector Module
+    CorrectorModule.forRootAsync({
+      inject: [DataSource],
+      useFactory: (dataSource: DataSource) => ({
+        // Use the built-in TypeORM implementations
+        mappingRepository: new TypeOrmMappingRepository(
+          dataSource.getRepository(IntegrationMappingEntity)
+        ),
+        auditRepository: new TypeOrmAuditRepository(
+          dataSource.getRepository(CorrectorAuditEntity)
+        ),
+      }),
     }),
   ],
 })
 export class AppModule {}
 ```
 
-### 3. Import the Corrector Module
-Use the `forRoot` method to register the module. It is marked as `@Global()`, so you only need to import it once in your root module.
+#### B. Without TypeORM (Custom Implementation)
+If you use Prisma, Sequelize, or Mongoose, you can implement the interfaces yourself.
 
 ```typescript
-import { CorrectorModule } from 'nestjs-api-corrector';
+import { CorrectorModule, IMappingRepository, IAuditRepository } from 'nestjs-api-corrector';
+
+class MyCustomMappingRepo implements IMappingRepository {
+  async findByIdOrName(key: string) {
+    // Fetch from your DB (Prisma, Mongoose, etc.)
+    return myDb.findConfig(key);
+  }
+}
+
+class MyCustomAuditRepo implements IAuditRepository {
+  async save(audit: any) {
+    // Save to your DB/Logger
+    console.log('Audit:', audit);
+  }
+}
 
 @Module({
   imports: [
     CorrectorModule.forRoot({
-      // Optional: Extend the base entity to add your own fields
-      // entity: MyCustomExtendedEntity,
-      globalTimeoutMs: 5000,
+      mappingRepository: new MyCustomMappingRepo(),
+      auditRepository: new MyCustomAuditRepo(),
     }),
   ],
 })
@@ -66,71 +127,101 @@ export class AppModule {}
 
 ---
 
-## 💻 Usage
+### 3. Using the Service
 
-### A. Automatic API Endpoint
-The package includes a built-in controller that handles proxied requests automatically.
-
-*   **Prefix**: `/corrector/:mappingIdOrSlug`
-*   **Example**: `GET http://localhost:3000/corrector/dog-ceo-breeds-jsonpath`
-
-This endpoint will search the database by UUID first, then by the unique `name` (slug) defined in your configuration.
-
-### B. Programmatic Usage (Service Injection)
-You can inject the `CorrectorEngine` to perform transformations manually within your business logic.
+Inject `CorrectorEngine` to execute integrations programmatically.
 
 ```typescript
-import { CorrectorEngine, MappingRegistryService } from 'nestjs-api-corrector';
+import { Injectable } from '@nestjs/common';
+import { CorrectorEngine } from 'nestjs-api-corrector';
 
 @Injectable()
 export class MyService {
-  constructor(
-    private readonly corrector: CorrectorEngine,
-    private readonly registry: MappingRegistryService,
-  ) {}
+  constructor(private readonly corrector: CorrectorEngine) {}
 
-  async transformData(sourcePayload: any) {
-    const mapping = await this.registry.findByIdOrName('my-api-mapping');
-    return await this.corrector.execute(mapping.mappingConfig, sourcePayload, {
-        method: 'POST',
-        queryParams: { version: 'v1' }
+  async syncProductData() {
+    // Call the "get-products" integration defined in your DB
+    const result = await this.corrector.execute('get-products', {
+      category: 'electronics', // Payload
     });
+
+    return result;
+  }
+}
+```
+
+### 4. Using the API Controller
+
+The library also exposes a controller automatically at `POST /connector/execute`.
+
+**Request:**
+```json
+POST /connector/execute
+{
+  "connectorKey": "get-products",
+  "payload": {
+    "category": "electronics"
   }
 }
 ```
 
 ---
 
-## 📐 Mapping Configuration Structure
+## 📝 Configuration Object (The "Mapping")
 
-The library uses a highly flexible JSON configuration:
+In your database (`integration_mappings_config.mapping_config`), you store the rules.
 
-| Field | Description |
-| :--- | :--- |
-| `targetApi` | URL, Method, and default Headers for the remote system. |
-| `authConfig` | Auth type (`bearer`, `oauth2`, `basic`, `none`) and credentials. |
-| `requestMapping` | JSONPath rules to transform the incoming body. |
-| `responseMapping` | Logic to transform the remote result back to the client. |
-| `errorMapping` | Rules to transform 4xx/5xx API failures. |
-
-### Advanced: Conditional Mapping
-You can use conditions to decide if a field should be mapped or what value it should take:
+### minimal Example
 ```json
 {
-  "source": "$.order.type",
-  "target": "$.request.priority",
-  "condition": "$.order.type == 'EXPRESS'",
-  "valueIfTrue": "HIGH",
-  "valueIfFalse": "NORMAL"
+  "id": "get-products",
+  "sourceSystem": "MyApp",
+  "targetSystem": "ExternalAPI",
+  "targetApi": {
+    "url": "https://api.example.com/products",
+    "method": "GET"
+  }
+}
+```
+
+### Full Example (Auth + Transformation)
+```json
+{
+  "id": "create-user",
+  "targetApi": {
+    "url": "https://api.example.com/users",
+    "method": "POST"
+  },
+  "authConfig": {
+    "authType": "BEARER_TOKEN",
+    "config": {
+       "tokenUrl": "https://api.example.com/login",
+       "loginPayload": { "user": "admin", "pass": "secret" }
+    }
+  },
+  "requestMapping": {
+    "type": "OBJECT",
+    "mappings": [
+       { "source": "$.inputName", "target": "$.fullName" },
+       { "source": "$.inputAge", "target": "$.meta.age" }
+    ]
+  }
 }
 ```
 
 ---
 
-## 📜 Full Documentation
-For a deep dive into the logic and advanced capabilities, please refer to the markdown files included in the package root:
-*   `CORRECTOR_SPECIFICATIONS.md`: Detailed architecture and logic flow.
-*   `PUBLISH_GUIDE.md`: Comprehensive integration and local testing guide.
+## 🧪 Verified Scenarios
+
+This library handles:
+*   ✅ **GET/POST/PUT/DELETE**
+*   ✅ **Dynamic Query Params** (e.g., `?q=$.query`)
+*   ✅ **Path Params** (e.g., `/users/:id`)
+*   ✅ **Authentication** (Bearer, Basic, API Key)
+*   ✅ **Error Handling** (Circuit Breaker logic included)
+
+---
 
 ## 📄 License
-Licensed under [MIT](./LICENSE).
+
+MIT

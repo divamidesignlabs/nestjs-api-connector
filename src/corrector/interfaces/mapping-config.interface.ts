@@ -30,24 +30,19 @@ export interface ResponseMapping {
   logic?: string; // For CUSTOM type (Javascript code body)
 }
 
-export interface AuthConfig {
-  type:
-    | 'basic'
-    | 'api-key'
-    | 'oauth2'
-    | 'bearer'
-    | 'passthrough'
-    | 'none'
-    | 'NONE'; // Added bearer and passthrough
-  [key: string]: any;
+export interface ResilienceConfig {
+  retryCount?: number;
+  retryDelayMs?: number;
+  circuitBreakerThreshold?: number;
 }
 
 export interface TargetApiConfig {
   url: string;
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | (string & {});
   headers?: Record<string, string>;
   queryParams?: Record<string, string>;
-  timeoutMs?: number;
+  pathParams?: Record<string, string>;
+  resilience?: ResilienceConfig;
 }
 
 export interface ErrorAction {
@@ -60,25 +55,111 @@ export interface ErrorHandlingConfig {
   onTransformError?: ErrorAction;
 }
 
-export interface MappingConfig {
-  id: string; // Integration ID
-  integrationId?: string; // Alias or secondary ID
-  version?: string;
-  status?: string;
+// --- Specific Auth Configuration Contracts ---
 
+export interface BasicAuthConfig {
+  username: string;
+  password: string;
+  [key: string]: any;
+}
+
+export interface ApiKeyAuthConfig {
+  keyName: string;
+  keyValue: string;
+  location?: 'HEADER' | 'QUERY'; // Default HEADER
+  [key: string]: any;
+}
+
+export interface BearerAuthConfig {
+  // Static Token
+  token?: string;
+
+  // OR Dynamic Token Generation
+  tokenUrl?: string;
+  loginPayload?: Record<string, any>;
+  headerName?: string; // Default Authorization
+  tokenPrefix?: string; // Default Bearer
+
+  [key: string]: any;
+}
+
+export interface OAuth2AuthConfig {
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+  scope?: string;
+  grantType?: string; // Default client_credentials
+  [key: string]: any;
+}
+
+export interface CustomAuthConfig {
+  headers: Record<string, string>;
+  [key: string]: any;
+}
+
+export interface JwtAuthConfig {
+  issuer: string;
+  audience: string;
+  privateKeyRef: string;
+  [key: string]: any;
+}
+
+// --- Main Auth Union Type ---
+
+export interface AuthConfig {
+  authType:
+    | 'NONE'
+    | 'API_KEY'
+    | 'BASIC'
+    | 'BEARER_TOKEN'
+    | 'OAUTH2_CLIENT_CREDENTIALS'
+    | 'JWT'
+    | 'CUSTOM';
+  config:
+    | BasicAuthConfig
+    | ApiKeyAuthConfig
+    | BearerAuthConfig
+    | OAuth2AuthConfig
+    | CustomAuthConfig
+    | JwtAuthConfig
+    | Record<string, any>;
+}
+
+export interface ConnectorRequest {
+  connectorKey: string;
+  operation?: string;
+  authType?: string; // Optional override from source
+  authConfig?: Record<string, any>; // Optional override from source
+  headerData?: Record<string, string>; // Headers to be sent to target
+  queryParams?: Record<string, any>; // Query params to be sent to target
+  payload: unknown; // Data to be transformed/sent as body - explicitly unknown to encourage checking
+}
+
+export interface MappingConfig {
+  id: string; // Integration ID / mappingKey
   sourceSystem: string;
   targetSystem: string;
 
   requestMapping?: RequestMapping;
-  authConfig?: AuthConfig;
+  authConfig?: AuthConfig; // Target auth config from DB
   targetApi: TargetApiConfig;
   responseMapping?: ResponseMapping;
+  responseSchema?: Record<string, any>; // Updated type from 'any'
 
   transforms?: Record<string, TransformDefinition>;
   errorHandling?: ErrorHandlingConfig;
 
+  requestSchema?: Record<string, any>; // Added field
+
   metadata?: Record<string, any>;
 
-  // Backwards compatibility or alternative error format
+  steps?: {
+    id: string;
+    targetApi: TargetApiConfig;
+    requestMapping?: RequestMapping;
+    responseMapping?: ResponseMapping;
+    saveResultToContextAs?: string;
+  }[];
+
   errorMapping?: any;
 }

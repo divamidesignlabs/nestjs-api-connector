@@ -1,15 +1,28 @@
 {
   "name": "nestjs-api-corrector",
-  "version": "0.0.2",
-  "description": "Dynamic Master Table Management Library for NestJS",
+  "version": "0.0.3",
+  "description": "Enterprise-grade API Proxy and Transformation Framework for NestJS",
+  "license": "MIT",
+  "author": "Divami",
+  "keywords": [
+    "nestjs",
+    "api-gateway",
+    "api-proxy",
+    "transformation",
+    "jsonpath",
+    "enterprise",
+    "resilience",
+    "audit-log",
+    "mapping"
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
     "README.md",
-    "PUBLISH_GUIDE.md",
-    "CORRECTOR_SPECIFICATIONS.md",
-    "database_init.sql"
+    "KT_DOCUMENT.md",
+    "database_init.sql",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -31,6 +44,7 @@
     "@nestjs/axios": "^4.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/typeorm": "^11.0.0",
+    "ajv": "^8.17.1",
     "axios": "^1.13.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
