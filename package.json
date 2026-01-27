@@ -1,6 +1,6 @@
 {
   "name": "nestjs-api-corrector",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Enterprise-grade API Proxy and Transformation Framework for NestJS",
   "license": "MIT",
   "author": "Divami",
@@ -25,6 +25,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
@@ -43,7 +44,6 @@
     "@nestjs/axios": "^4.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/typeorm": "^11.0.0",
-    "ajv": "^8.17.1",
     "axios": "^1.13.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",

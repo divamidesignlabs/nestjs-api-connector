@@ -8,8 +8,6 @@ import { MappingRegistryService } from './services/mapping-registry.service';
 import { CorrectorController } from './corrector.controller';
 import { CorrectorModuleOptions } from './interfaces/corrector-module-options.interface';
 import { MAPPING_REPOSITORY } from './interfaces/mapping-repository.interface';
-import { AUDIT_REPOSITORY } from './interfaces/audit-repository.interface';
-import { LoggerAuditRepository } from './repositories/logger-audit.repository';
 
 @Global()
 @Module({})
@@ -41,25 +39,6 @@ export class CorrectorModule {
       });
     }
 
-    // AUDIT REPOSITORY
-    if (options.auditRepository) {
-      providers.push({
-        provide: AUDIT_REPOSITORY,
-        useValue: options.auditRepository,
-      });
-    } else if (options.auditRepositoryFactory) {
-      providers.push({
-        provide: AUDIT_REPOSITORY,
-        useFactory: options.auditRepositoryFactory.useFactory,
-        inject: options.auditRepositoryFactory.inject || [],
-      });
-    } else {
-      // Default to Logger
-      providers.push({
-        provide: AUDIT_REPOSITORY,
-        useClass: LoggerAuditRepository,
-      });
-    }
 
     return {
       module: CorrectorModule,
@@ -101,22 +80,6 @@ export class CorrectorModule {
           throw new Error(
             'mappingRepository or mappingRepositoryFactory required',
           );
-        },
-        inject: options.inject || [],
-      },
-      {
-        provide: AUDIT_REPOSITORY,
-        useFactory: async (...args: unknown[]) => {
-          const config = await options.useFactory(...args);
-          if (config.auditRepository) return config.auditRepository;
-          if (config.auditRepositoryFactory) {
-            return config.auditRepositoryFactory.useFactory(
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-              ...(config.auditRepositoryFactory.inject || []),
-            );
-          }
-          // Default to Logger
-          return new LoggerAuditRepository();
         },
         inject: options.inject || [],
       },

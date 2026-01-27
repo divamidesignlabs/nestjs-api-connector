@@ -8,25 +8,16 @@ import {
   ResponseMapping,
   TargetApiConfig,
 } from '../interfaces/mapping-config.interface';
-// CorrectorAudit import removed
-import {
-  IAuditRepository,
-  AUDIT_REPOSITORY,
-} from '../interfaces/audit-repository.interface';
 import * as jsonpath from 'jsonpath';
-import Ajv from 'ajv';
 
 @Injectable()
 export class CorrectorEngine {
   private readonly logger = new Logger(CorrectorEngine.name);
-  private readonly ajv = new Ajv();
 
   constructor(
     private readonly transformer: TransformerService,
     private readonly apiCaller: TargetApiCaller,
     private readonly authFactory: AuthStrategyFactory,
-    @Inject(AUDIT_REPOSITORY)
-    private readonly auditRepo: IAuditRepository,
   ) {}
 
   async execute(
@@ -41,100 +32,20 @@ export class CorrectorEngine {
   ): Promise<unknown> {
     const startTime = Date.now();
     const payload = sourcePayload as Record<string, unknown>;
-    const audit = this.auditRepo.create({
-      mappingId: mapping.id,
-      mappingName: mapping.id,
-      sourceSystem: mapping.sourceSystem,
-      targetSystem: mapping.targetSystem,
-      method: (context?.method as string) || mapping.targetApi.method,
-      requestPayload: payload,
-    });
 
     try {
       this.logger.log(`Executing correction for mapping: ${mapping.id}`);
 
-      // 0. Request Contract Validation (Feature)
-      if (mapping.requestSchema) {
-        this.logger.debug('Validating request payload against schema...');
-        const validate = this.ajv.compile(mapping.requestSchema);
-        const valid = validate(sourcePayload);
-        if (!valid) {
-          const errorDetails = this.ajv.errorsText(validate.errors);
-          this.logger.warn(`Request validation failed: ${errorDetails}`);
-          audit.metadata = {
-            requestValidationFailed: true,
-            schemaErrors: validate.errors,
-          };
-          throw new Error(
-            `Request Contract Validation Failed: ${errorDetails}`,
-          );
-        }
-      } else {
-        this.logger.debug('No requestSchema found in mapping config.');
-      }
 
-      let finalResponse: unknown;
-      const sharedContext: Record<string, any> = {
-        ...payload,
-      };
+      const callResult = (await this.executeSingleCall(
+        mapping,
+        payload,
+        context,
+      )) as { result: unknown; url: string };
 
-      if (mapping.steps && mapping.steps.length > 0) {
-        this.logger.debug(
-          `Found ${mapping.steps.length} workflow steps. Executing chaining...`,
-        );
-        for (const step of mapping.steps) {
-          this.logger.debug(`Step: ${step.id}`);
-          const callResult = (await this.executeSingleCall(
-            {
-              ...mapping,
-              targetApi: step.targetApi,
-              requestMapping: step.requestMapping,
-              responseMapping: step.responseMapping,
-            },
-            sharedContext,
-            context,
-          )) as { result: unknown; url: string };
+      const finalResponse = callResult.result;
 
-          const { result: stepResult, url: stepUrl } = callResult;
 
-          audit.url = stepUrl; // Audit last step's URL or merge them
-          if (step.saveResultToContextAs) {
-            sharedContext[step.saveResultToContextAs] = stepResult;
-          }
-          finalResponse = stepResult;
-        }
-      } else {
-        const callResult = (await this.executeSingleCall(
-          mapping,
-          payload,
-          context,
-        )) as { result: unknown; url: string };
-        const { result, url } = callResult;
-        finalResponse = result;
-        audit.url = url;
-      }
-
-      // 6. Schema Validation (Feature 3)
-      if (mapping.responseSchema) {
-        this.logger.debug('Validating response against schema...');
-        const validate = this.ajv.compile(mapping.responseSchema);
-        const valid = validate(finalResponse);
-        if (!valid) {
-          const errorDetails = this.ajv.errorsText(validate.errors);
-          this.logger.warn(`Schema validation failed: ${errorDetails}`);
-          audit.metadata = {
-            schemaValidated: false,
-            schemaErrors: validate.errors,
-          };
-          throw new Error(`Schema validation failed: ${errorDetails}`);
-        }
-        audit.metadata = { schemaValidated: true };
-      }
-
-      audit.statusCode = 200;
-      audit.latencyMs = Date.now() - startTime;
-      audit.responsePayload = finalResponse as Record<string, any>;
-      await this.auditRepo.save(audit);
 
       return finalResponse;
     } catch (error: any) {
@@ -147,13 +58,6 @@ export class CorrectorEngine {
         `Execution failed: ${axiosError.message || 'Unknown error'}`,
       );
 
-      audit.statusCode = axiosError.response?.status || 500;
-      audit.latencyMs = Date.now() - startTime;
-      audit.error = {
-        message: axiosError.message || 'Unknown Error',
-        stack: axiosError.stack || '',
-      };
-      await this.auditRepo.save(audit);
 
       if (mapping.errorMapping) {
         this.logger.debug('Applying error mapping...');
@@ -185,14 +89,9 @@ export class CorrectorEngine {
       headers?: Record<string, any>;
     },
   ): Promise<{ result: unknown; url: string }> {
-    // DYNAMIC OVERRIDES
-    const effectiveMethod =
-      (context?.method as string) || mapping.targetApi.method;
+    const effectiveMethod = mapping.targetApi.method;
     // 0. Base Query Params
-    const rawQueryParams = {
-      ...mapping.targetApi.queryParams,
-      ...(context?.queryParams as Record<string, any>),
-    } as Record<string, any>;
+    const rawQueryParams = (context?.queryParams as Record<string, any>) || {};
 
     // 0.1 Resolve Query Param values
     const effectiveQueryParams: Record<string, string | number | boolean> = {};
@@ -227,7 +126,7 @@ export class CorrectorEngine {
 
     // 2. Transform Request
     let targetPayload: unknown;
-    const requestPayload = payload as unknown as Record<string, unknown>;
+    const requestPayload = payload;
     if (
       !mapping.requestMapping ||
       !mapping.requestMapping.mappings ||

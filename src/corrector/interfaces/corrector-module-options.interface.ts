@@ -1,5 +1,4 @@
 import { IMappingRepository } from './mapping-repository.interface';
-import { IAuditRepository } from './audit-repository.interface';
 
 export interface CorrectorModuleOptions {
   /**
@@ -17,20 +16,6 @@ export interface CorrectorModuleOptions {
     inject?: any[];
   };
 
-  /**
-   * Direct instance of IAuditRepository (use this for simple cases)
-   */
-  auditRepository?: IAuditRepository;
-
-  /**
-   * Factory for creating IAuditRepository (use this for dependency injection)
-   */
-  auditRepositoryFactory?: {
-    useFactory: (
-      ...args: any[]
-    ) => IAuditRepository | Promise<IAuditRepository>;
-    inject?: any[];
-  };
 
   /**
    * Optional: Global timeout in milliseconds

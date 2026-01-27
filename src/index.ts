@@ -9,6 +9,4 @@ export * from './corrector/entities/integration-mapping-typeorm.entity';
 export * from './corrector/interfaces/mapping-config.interface';
 export * from './corrector/interfaces/corrector-module-options.interface';
 export * from './corrector/interfaces/mapping-repository.interface';
-export * from './corrector/interfaces/audit-repository.interface';
 export * from './corrector/repositories/typeorm-mapping.repository';
-export * from './corrector/repositories/logger-audit.repository';

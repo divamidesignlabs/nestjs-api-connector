@@ -54,10 +54,19 @@ export class CorrectorController {
 
       // 2. Resolve Auth Config (DB config + Request overrides)
       let effectiveAuth: AuthConfig | undefined = mapping.mappingConfig.authConfig;
+      let incomingAuthType = authType || authConfig?.authType;
+      if(mapping.mappingConfig.authConfig?.authType !== 'NONE' && effectiveAuth?.authType !== incomingAuthType){
+        return {
+          success: false,
+          statusCode: 400,
+          errorType: 'AUTH_MISMATCH',
+          message: `Authentication type mismatch for connector: ${connectorKey}`,
+        };
+      }
 
       if (authType || authConfig) {
         // Resolve final authType
-        const resolvedAuthType = (authType || authConfig?.authType || effectiveAuth?.authType || 'NONE') as any;
+        const resolvedAuthType = (effectiveAuth?.authType || 'NONE') as any;
         
         effectiveAuth = {
           authType: resolvedAuthType,
@@ -81,9 +90,13 @@ export class CorrectorController {
         } catch (authError) {
           const message =
             authError instanceof Error ? authError.message : 'Unknown error';
-          throw new BadRequestException(
-            `Authentication Validation Failed: ${message}`,
-          );
+          
+          return {
+            success: false,
+            statusCode: 400,
+            errorType: 'AUTH_VALIDATION_FAILED',
+            message: `Authentication Validation Failed: ${message}`,
+          };
         }
       }
 
@@ -116,8 +129,21 @@ export class CorrectorController {
         data: result,
       };
     } catch (error: any) {
-      if (error instanceof HttpException) {
-        throw error;
+      this.logger.debug(`Caught error in controller: ${error.message}`);
+      
+      // Handle known HttpExceptions (like the Auth Mismatch)
+      if (error && typeof error.getStatus === 'function') {
+        const status = error.getStatus();
+        const response = error.getResponse();
+        const message = typeof response === 'object' ? (response as any).message : response;
+        
+        this.logger.warn(`Returning mapped exception: ${status} - ${message}`);
+        return {
+          success: false,
+          statusCode: status,
+          errorType: 'FRAMEWORK_ERROR',
+          message: message,
+        };
       }
 
       const axiosError = error as {
@@ -126,6 +152,7 @@ export class CorrectorController {
         stack?: string;
       };
 
+      // Handle Target API Errors
       if (axiosError.response) {
         const status = axiosError.response.status || 500;
         const targetErrorData = axiosError.response.data;
@@ -141,21 +168,20 @@ export class CorrectorController {
         };
       }
 
+      // Handle unforeseen internal errors
       const errorMessage =
         (axiosError.message as string) || 'Unknown internal error';
       this.logger.error(
         `Internal Framework Error: ${errorMessage}`,
         axiosError.stack,
       );
-      throw new HttpException(
-        {
-          success: false,
-          statusCode: 500,
-          errorType: 'INTERNAL_CORRECTOR_ERROR',
-          message: errorMessage,
-        },
-        500,
-      );
+      
+      return {
+        success: false,
+        statusCode: 500,
+        errorType: 'INTERNAL_CORRECTOR_ERROR',
+        message: errorMessage,
+      };
     }
   }
 }

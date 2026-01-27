@@ -137,22 +137,13 @@ export interface MappingConfig {
   authConfig?: AuthConfig; // Target auth config from DB
   targetApi: TargetApiConfig;
   responseMapping?: ResponseMapping;
-  responseSchema?: Record<string, any>; // Updated type from 'any'
 
   transforms?: Record<string, TransformDefinition>;
   errorHandling?: ErrorHandlingConfig;
 
-  requestSchema?: Record<string, any>; // Added field
 
   metadata?: Record<string, any>;
 
-  steps?: {
-    id: string;
-    targetApi: TargetApiConfig;
-    requestMapping?: RequestMapping;
-    responseMapping?: ResponseMapping;
-    saveResultToContextAs?: string;
-  }[];
 
   errorMapping?: any;
 }
