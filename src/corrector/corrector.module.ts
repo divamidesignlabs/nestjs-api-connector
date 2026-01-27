@@ -9,6 +9,7 @@ import { CorrectorController } from './corrector.controller';
 import { CorrectorModuleOptions } from './interfaces/corrector-module-options.interface';
 import { MAPPING_REPOSITORY } from './interfaces/mapping-repository.interface';
 import { AUDIT_REPOSITORY } from './interfaces/audit-repository.interface';
+import { LoggerAuditRepository } from './repositories/logger-audit.repository';
 
 @Global()
 @Module({})
@@ -40,6 +41,7 @@ export class CorrectorModule {
       });
     }
 
+    // AUDIT REPOSITORY
     if (options.auditRepository) {
       providers.push({
         provide: AUDIT_REPOSITORY,
@@ -50,6 +52,12 @@ export class CorrectorModule {
         provide: AUDIT_REPOSITORY,
         useFactory: options.auditRepositoryFactory.useFactory,
         inject: options.auditRepositoryFactory.inject || [],
+      });
+    } else {
+      // Default to Logger
+      providers.push({
+        provide: AUDIT_REPOSITORY,
+        useClass: LoggerAuditRepository,
       });
     }
 
@@ -107,7 +115,8 @@ export class CorrectorModule {
               ...(config.auditRepositoryFactory.inject || []),
             );
           }
-          throw new Error('auditRepository or auditRepositoryFactory required');
+          // Default to Logger
+          return new LoggerAuditRepository();
         },
         inject: options.inject || [],
       },

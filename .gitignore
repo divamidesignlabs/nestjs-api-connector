@@ -5,9 +5,22 @@
 # logs
 npm-debug.log
 yarn-error.log
+*.log
 
 # test coverage
 /coverage
 
 # configuration
 /.env
+
+# Artifacts
+*.tgz
+*.tar.gz
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/

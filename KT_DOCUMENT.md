@@ -53,14 +53,22 @@ import { DataSource } from 'typeorm';
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot({ ... }), // Your DB Config
+    TypeOrmModule.forRoot({
+      // connection options...
+      entities: [
+        IntegrationMappingEntity, 
+        // CorrectorAuditEntity, // Optional: Only if using DB Auditing
+        // ... your other app entities
+      ],
+      synchronize: true, // Auto-create tables (Dev only)
+    }),
     
     // Configure Corrector
     CorrectorModule.forRootAsync({
       inject: [DataSource],
       useFactory: (dataSource: DataSource) => ({
         mappingRepository: new TypeOrmMappingRepository(dataSource.getRepository(IntegrationMappingEntity)),
-        auditRepository: new TypeOrmAuditRepository(dataSource.getRepository(CorrectorAuditEntity)),
+        // Audit is now optional (Defaults to Console Logger)
       }),
     }),
   ],
@@ -90,13 +98,7 @@ We have verified the library with the following live tests:
 | Feature | Connector Key | Description | Status |
 | :--- | :--- | :--- | :--- |
 | **GET Request** | `jsonplaceholder-users` | Fetch list, transform via Custom JS | ✅ PASS |
-| **JSONPath** | `dog-ceo-breeds` | Transform response using JSONPath | ✅ PASS |
-| **Authentication** | `dummyjson-posts` | Dynamic Bearer Token Auth | ✅ PASS |
-| **POST Request** | `jsonplaceholder-create-post` | Create resource, input mapping | ✅ PASS |
-| **Validation** | `jsonplaceholder-create-post` | Schema validation (Required fields) | ✅ PASS |
-| **Query Params** | `iirm-entity-fields` | Dynamic Query Param Interpolation | ✅ PASS |
-| **Error Handling** | `broken-api` | Graceful failure on downstream errors | ✅ PASS |
-| **Invalid Key** | `non-existent` | 404 Not Found handling | ✅ PASS |
+
 
 ---
 

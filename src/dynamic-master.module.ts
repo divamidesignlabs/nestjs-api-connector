@@ -4,9 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CorrectorModule } from './corrector/corrector.module';
 import { DynamicMasterService } from './dynamic-master.service';
 import { IntegrationMappingEntity } from './corrector/entities/integration-mapping-typeorm.entity';
-import { CorrectorAuditEntity } from './corrector/entities/corrector-audit-typeorm.entity';
 import { TypeOrmMappingRepository } from './corrector/repositories/typeorm-mapping.repository';
-import { TypeOrmAuditRepository } from './corrector/repositories/typeorm-audit.repository';
 
 /**
  * This module is for standalone/microservice usage with TypeORM
@@ -27,29 +25,25 @@ import { TypeOrmAuditRepository } from './corrector/repositories/typeorm-audit.r
         username: configService.get<string>('DB_USER'),
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
-        entities: [IntegrationMappingEntity, CorrectorAuditEntity],
+        entities: [IntegrationMappingEntity], // Only Mapping Entity required
         synchronize: false, // Managed via database_init.sql
       }),
       inject: [ConfigService],
     }),
     // Register TypeORM entities for repository injection
-    TypeOrmModule.forFeature([IntegrationMappingEntity, CorrectorAuditEntity]),
+    TypeOrmModule.forFeature([IntegrationMappingEntity]),
     // Configure CorrectorModule with TypeORM repository implementations using factories
     CorrectorModule.forRoot({
       mappingRepositoryFactory: {
         useFactory: (repo: TypeOrmMappingRepository) => repo,
         inject: [TypeOrmMappingRepository],
       },
-      auditRepositoryFactory: {
-        useFactory: (repo: TypeOrmAuditRepository) => repo,
-        inject: [TypeOrmAuditRepository],
-      },
+      // Audit defaults to LoggerAuditRepository (No DB)
     }),
   ],
   providers: [
     DynamicMasterService,
     TypeOrmMappingRepository,
-    TypeOrmAuditRepository,
   ],
   exports: [DynamicMasterService],
 })

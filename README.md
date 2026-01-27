@@ -60,33 +60,30 @@ import {
 @Module({
   imports: [
     // 1. Configure your TypeORM connection
+    // IMPORTANT: You MUST add IntegrationMappingEntity to the 'entities' array!
     TypeOrmModule.forRoot({
       type: 'postgres',
-      host: 'localhost',
-      port: 5432,
-      username: 'postgres',
-      password: 'password',
-      database: 'my_db',
+      // ... db config ...
       entities: [
-         // Add Corrector entities here
-         IntegrationMappingEntity,
-         CorrectorAuditEntity, 
-         // ... your other entities
+         IntegrationMappingEntity, // <--- Required for 'integration_mappings_config' table
+         // CorrectorAuditEntity,  // <--- Optional (only if you want DB auditing)
+         
+         // ... your other application entities
       ],
-      synchronize: true, // Auto-create tables (Dev only)
+      synchronize: true, 
     }),
 
     // 2. Configure Corrector Module
     CorrectorModule.forRootAsync({
       inject: [DataSource],
       useFactory: (dataSource: DataSource) => ({
-        // Use the built-in TypeORM implementations
+        // Use the built-in TypeORM mapping repository
         mappingRepository: new TypeOrmMappingRepository(
           dataSource.getRepository(IntegrationMappingEntity)
         ),
-        auditRepository: new TypeOrmAuditRepository(
-          dataSource.getRepository(CorrectorAuditEntity)
-        ),
+        // auditRepository is optional! defaults to Console Logger.
+        // If you want DB auditing:
+        // auditRepository: new TypeOrmAuditRepository(dataSource.getRepository(CorrectorAuditEntity)),
       }),
     }),
   ],
@@ -213,15 +210,38 @@ In your database (`integration_mappings_config.mapping_config`), you store the r
 
 ## 🧪 Verified Scenarios
 
-This library handles:
-*   ✅ **GET/POST/PUT/DELETE**
-*   ✅ **Dynamic Query Params** (e.g., `?q=$.query`)
-*   ✅ **Path Params** (e.g., `/users/:id`)
-*   ✅ **Authentication** (Bearer, Basic, API Key)
-*   ✅ **Error Handling** (Circuit Breaker logic included)
+The `database_init.sql` script seeds the following example:
+
+| Connector Key | Feature Validated | Auth Strategy |
+| :--- | :--- | :--- |
+| `jsonplaceholder-users` | **Standard Proxy** | None |
+
 
 ---
 
-## 📄 License
+## � Appendix: Entity Definitions
+
+If you need to define these entities manually (e.g., for non-TypeORM setups), they must match these structures:
+
+### 1. IntegrationMappingEntity
+Table: `integration_mappings_config`
+
+```typescript
+export class IntegrationMappingEntity {
+    id: string;          // UUID
+    name: string;        // Unique Key
+    sourceSystem: string;
+    targetSystem: string;
+    mappingConfig: MappingConfig; // JSONB
+    createdAt: Date;
+    updatedAt: Date;
+}
+```
+
+
+
+---
+
+## �📄 License
 
 MIT

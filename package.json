@@ -1,6 +1,6 @@
 {
   "name": "nestjs-api-corrector",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Enterprise-grade API Proxy and Transformation Framework for NestJS",
   "license": "MIT",
   "author": "Divami",
