@@ -26,6 +26,10 @@ export class TargetApiCaller {
     this.logger.debug(
       `Calling Target API: ${requestConfig.method} ${requestConfig.url}`,
     );
+    this.logger.debug(`Request Config: ${JSON.stringify({
+      params: requestConfig.params,
+      headers: requestConfig.headers
+    })}`);
 
     try {
       const response = await firstValueFrom(

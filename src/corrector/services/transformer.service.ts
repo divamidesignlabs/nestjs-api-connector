@@ -16,7 +16,7 @@ export class TransformerService {
     mapping: RequestMapping | ResponseMapping,
     customTransforms?: Record<string, TransformDefinition>,
   ): any {
-    if (!mapping) {
+    if (!mapping || mapping.type === 'DIRECT') {
       return sourceData;
     }
 

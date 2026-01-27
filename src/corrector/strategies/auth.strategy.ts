@@ -6,7 +6,6 @@ import {
   ApiKeyAuthConfig,
   BearerAuthConfig,
   OAuth2AuthConfig,
-  CustomAuthConfig,
   JwtAuthConfig,
 } from '../interfaces/mapping-config.interface';
 
@@ -45,8 +44,6 @@ export class AuthStrategyFactory {
         return new OAuth2Provider();
       case 'JWT':
         return new JwtAuthProvider();
-      case 'CUSTOM':
-        return new CustomAuthProvider();
       case 'NONE':
       default:
         return new NoAuthProvider();
@@ -70,9 +67,28 @@ export class BearerAuthProvider implements AuthProvider {
   async inject(
     requestConfig: RequestConfig,
     authConfig: AuthConfig,
+    context?: AuthContext,
   ): Promise<RequestConfig> {
     const config = (authConfig.config || {}) as BearerAuthConfig;
-    let token = config.token;
+    
+    // PRIORITY:
+    // 1. context.incomingToken
+    // 2. context.headers.Authorization (if it exists)
+    // 3. Database stored token
+    // 4. Dynamic Token Generation (tokenUrl)
+    
+    let token = context?.incomingToken;
+    
+    if (!token && context?.headers?.Authorization) {
+      const authHeader = context.headers.Authorization as string;
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
+    }
+
+    if (!token) {
+      token = config.token;
+    }
 
     if (!token && config.tokenUrl) {
       token = await this.getDynamicToken(config);
@@ -207,29 +223,10 @@ export class ApiKeyAuthProvider implements AuthProvider {
         ...requestConfig.headers,
         [keyName]: keyValue,
       };
-    } else {
-      // Query param support could be added here if needed
-    }
-    return Promise.resolve(requestConfig);
-  }
-}
-
-export class CustomAuthProvider implements AuthProvider {
-  validate(authConfig: AuthConfig): void {
-    const config = (authConfig.config || {}) as CustomAuthConfig;
-    if (!config.headers) {
-      throw new Error('AuthType CUSTOM requires "headers" object in config');
-    }
-  }
-  inject(
-    requestConfig: RequestConfig,
-    authConfig: AuthConfig,
-  ): Promise<RequestConfig> {
-    const config = (authConfig.config || {}) as CustomAuthConfig;
-    if (config.headers) {
-      requestConfig.headers = {
-        ...requestConfig.headers,
-        ...config.headers,
+    } else if (location === 'QUERY') {
+      requestConfig.params = {
+        ...(requestConfig.params || {}),
+        [keyName]: keyValue,
       };
     }
     return Promise.resolve(requestConfig);

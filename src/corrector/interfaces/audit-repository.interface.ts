@@ -1,4 +1,22 @@
-import { CorrectorAudit } from '../entities/corrector-audit.entity';
+/**
+ * Corrector Audit data structure
+ */
+export interface CorrectorAudit {
+  id?: string;
+  mappingId?: string;
+  mappingName?: string;
+  sourceSystem?: string;
+  targetSystem?: string;
+  method?: string;
+  url?: string;
+  statusCode?: number;
+  latencyMs?: number;
+  requestPayload?: Record<string, any>;
+  responsePayload?: Record<string, any>;
+  error?: Record<string, any>;
+  metadata?: Record<string, any>;
+  createdAt?: Date;
+}
 
 /**
  * Repository interface for Audit Logs

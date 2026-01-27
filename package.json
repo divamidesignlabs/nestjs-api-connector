@@ -20,7 +20,6 @@
   "files": [
     "dist",
     "README.md",
-    "KT_DOCUMENT.md",
     "database_init.sql",
     "LICENSE"
   ],

@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { IAuditRepository } from '../interfaces/audit-repository.interface';
-import { CorrectorAudit } from '../entities/corrector-audit.entity';
+import { IAuditRepository, CorrectorAudit } from '../interfaces/audit-repository.interface';
 
 @Injectable()
 export class LoggerAuditRepository implements IAuditRepository {

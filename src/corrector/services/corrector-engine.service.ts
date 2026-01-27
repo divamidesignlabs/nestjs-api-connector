@@ -250,20 +250,23 @@ export class CorrectorEngine {
     }
 
     // 3. Prepare Auth
-    let requestConfig = {
+    let requestConfig: any = {
       headers: {
         ...(context?.headers as Record<string, string>),
       } as Record<string, string>,
+      params: {},
     };
+
     if (mapping.authConfig) {
+      this.logger.debug(`Auth Configuration Found: ${mapping.authConfig.authType}`);
       const authProvider = this.authFactory.getProvider(
         mapping.authConfig.authType,
       );
-      requestConfig = (await authProvider.inject(
+      requestConfig = await authProvider.inject(
         requestConfig,
         mapping.authConfig,
         context as AuthContext,
-      )) as { headers: Record<string, string> };
+      );
     }
 
     // 4. Call Target API with Resilience
@@ -271,7 +274,10 @@ export class CorrectorEngine {
       ...mapping.targetApi,
       url: effectiveUrl,
       method: effectiveMethod,
-      queryParams: effectiveQueryParams as Record<string, string>,
+      queryParams: {
+        ...effectiveQueryParams,
+        ...(requestConfig.params || {}), // Merge params from Auth Provider
+      } as Record<string, string>,
     };
 
     let targetResponse: unknown;

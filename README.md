@@ -33,12 +33,8 @@ npm install nestjs-api-corrector
 
 ### 1. Database Setup
 
-You need two tables: `integration_mappings_config` and `corrector_audit_logs`.
-If you are using PostgreSQL, you can run the included initialization script:
-
-```sql
--- See database_init.sql in the package or documentation
-```
+You only need one table: `integration_mappings_config`.
+If you are using PostgreSQL, you can use the structure defined in `database_init.sql`.
 
 ### 2. Import Module in `AppModule`
 
@@ -52,9 +48,7 @@ import { DataSource } from 'typeorm';
 import { 
   CorrectorModule, 
   TypeOrmMappingRepository, 
-  TypeOrmAuditRepository, 
-  IntegrationMappingEntity, 
-  CorrectorAuditEntity 
+  IntegrationMappingEntity 
 } from 'nestjs-api-corrector';
 
 @Module({
@@ -66,11 +60,9 @@ import {
       // ... db config ...
       entities: [
          IntegrationMappingEntity, // <--- Required for 'integration_mappings_config' table
-         // CorrectorAuditEntity,  // <--- Optional (only if you want DB auditing)
-         
          // ... your other application entities
       ],
-      synchronize: true, 
+      synchronize: false, 
     }),
 
     // 2. Configure Corrector Module
@@ -81,9 +73,7 @@ import {
         mappingRepository: new TypeOrmMappingRepository(
           dataSource.getRepository(IntegrationMappingEntity)
         ),
-        // auditRepository is optional! defaults to Console Logger.
-        // If you want DB auditing:
-        // auditRepository: new TypeOrmAuditRepository(dataSource.getRepository(CorrectorAuditEntity)),
+        // auditRepository: Defaults to Console Logger.
       }),
     }),
   ],
@@ -164,47 +154,100 @@ POST /connector/execute
 
 ---
 
-## 📝 Configuration Object (The "Mapping")
+## 🔐 Authentication & Payload Standards
 
-In your database (`integration_mappings_config.mapping_config`), you store the rules.
+To ensure consistency and avoid validation errors, follow these standard structures when sending requests to the `/connector/execute` endpoint.
 
-### minimal Example
+### 1. Standard Request Payload (Postman/API)
+
+The standard request body expects these primary fields:
+
 ```json
 {
-  "id": "get-products",
-  "sourceSystem": "MyApp",
-  "targetSystem": "ExternalAPI",
-  "targetApi": {
-    "url": "https://api.example.com/products",
-    "method": "GET"
-  }
+  "connectorKey": "string (unique mapping name or UUID)",
+  "payload": { "key": "value" },      // Target API data
+  "authConfig": {                    // Runtime Auth Overrides (Recommended)
+    "authType": "BEARER_TOKEN | BASIC | API_KEY | OAUTH2_CLIENT_CREDENTIALS",
+    "config": { ... }                // Configuration specific to authType
+  },
+  "headerData": { "key": "value" },  // Extra Headers (Metadata/Context)
+  "queryParams": { "key": "value" }  // Extra Query Parameters
 }
 ```
 
-### Full Example (Auth + Transformation)
+### 2. Authentication Configuration Reference
+
+| Auth Type | Config Field Requirements | Target Injection |
+| :--- | :--- | :--- |
+| **`BEARER_TOKEN`** | `token` (Direct string) | `Authorization: Bearer <token>` |
+| **`BASIC`** | `username`, `password` | `Authorization: Basic <base64>` |
+| **`API_KEY`** | `keyName`, `keyValue`, `location` (HEADER/QUERY) | `keyName: keyValue` |
+| **`OAUTH2_CLIENT_CREDENTIALS`** | `tokenUrl`, `clientId`, `clientSecret` | `Authorization: Bearer <Dynamic>` |
+| **`NONE`** | (Empty Object) | No Auth injected |
+
+### 3. Standard Database Configuration (`mapping_config`)
+
+The configuration stored in the database governs how the library behaves.
+
+#### **Transparent Proxy (No Transformation)**
+Use this if you want to forward everything as-is.
 ```json
 {
-  "id": "create-user",
   "targetApi": {
-    "url": "https://api.example.com/users",
+    "url": "https://api.example.com/data",
     "method": "POST"
   },
-  "authConfig": {
-    "authType": "BEARER_TOKEN",
-    "config": {
-       "tokenUrl": "https://api.example.com/login",
-       "loginPayload": { "user": "admin", "pass": "secret" }
-    }
-  },
+  "responseMapping": { "type": "DIRECT" }
+}
+```
+
+#### **Standard Mapping (Filtering & Transformation)**
+Use this to pick specific fields and transform them.
+```json
+{
   "requestMapping": {
     "type": "OBJECT",
     "mappings": [
-       { "source": "$.inputName", "target": "$.fullName" },
-       { "source": "$.inputAge", "target": "$.meta.age" }
+      { "source": "$.inputName", "target": "$.fullName", "transform": "uppercase" },
+      { "source": "$.inputAge", "target": "$.meta.age" }
+    ]
+  },
+  "responseMapping": {
+    "type": "ARRAY", // For list transformations
+    "root": "$.data", // Path to array in target response
+    "mappings": [
+      { "source": "$.id", "target": "$.value" },
+      { "source": "$.name", "target": "$.label" }
     ]
   }
 }
 ```
+
+---
+
+## ✅ Feature Verification Scenarios
+
+| ID | Case | Input Sample | Logic |
+| :--- | :--- | :--- | :--- |
+| **TC-01** | **Bearer Pass-through** | `{"authConfig": {"authType": "BEARER_TOKEN", "config": {"token": "..."}}}` | Library injects Bearer header. |
+| **TC-02** | **Basic Auth Login** | `{"authConfig": {"authType": "BASIC", "config": {"username": "admin", "password": "..."}}}` | Library encodes & injects Basic header. |
+| **TC-03** | **Extra Metadata** | `{"headerData": {"X-App-ID": "test"}}` | Extra header is forwarded to target. |
+| **TC-04** | **Data Filtering** | `Mapping defined for $.name` | Extra fields in source payload are stripped. |
+| **TC-05** | **Direct Reply** | `responseMapping.type = "DIRECT"` | Library returns target JSON exactly as received. |
+
+---
+
+## 🏗️ Technical Knowledge Transfer (KT)
+
+### Architecture Overview
+1. **Controller**: Merges incoming JSON overrides with Database configurations.
+2. **Strategies**: Implements the `AuthProvider` interface to validate and inject security headers.
+3. **Transformer**: Uses `jsonpath` to recursively map source trees to target trees.
+4. **Resilience**: Optional retry logic for flakey target APIs.
+
+### Extensibility
+* **Custom Transforms**: Add new logic to `TransformerService.applyTransform`.
+* **New Auth Types**: Implement the `AuthProvider` interface and register in `AuthStrategyFactory`.
 
 ---
 
@@ -219,7 +262,7 @@ The `database_init.sql` script seeds the following example:
 
 ---
 
-## � Appendix: Entity Definitions
+## 📄 Appendix: Entity Definitions
 
 If you need to define these entities manually (e.g., for non-TypeORM setups), they must match these structures:
 
@@ -238,10 +281,8 @@ export class IntegrationMappingEntity {
 }
 ```
 
-
-
 ---
 
-## �📄 License
+## 📄 License
 
 MIT

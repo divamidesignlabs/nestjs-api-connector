@@ -22,7 +22,7 @@ export interface RequestMapping {
 }
 
 export interface ResponseMapping {
-  type?: 'OBJECT' | 'ARRAY' | 'CUSTOM'; // Default OBJECT
+  type?: 'OBJECT' | 'ARRAY' | 'CUSTOM' | 'DIRECT'; // Default OBJECT
   root?: string; // e.g. "$[*]" for arrays
   outputWrapper?: string; // e.g. "$.countries"
   mappings?: MappingItem[];
@@ -92,11 +92,6 @@ export interface OAuth2AuthConfig {
   [key: string]: any;
 }
 
-export interface CustomAuthConfig {
-  headers: Record<string, string>;
-  [key: string]: any;
-}
-
 export interface JwtAuthConfig {
   issuer: string;
   audience: string;
@@ -113,14 +108,12 @@ export interface AuthConfig {
     | 'BASIC'
     | 'BEARER_TOKEN'
     | 'OAUTH2_CLIENT_CREDENTIALS'
-    | 'JWT'
-    | 'CUSTOM';
+    | 'JWT';
   config:
     | BasicAuthConfig
     | ApiKeyAuthConfig
     | BearerAuthConfig
     | OAuth2AuthConfig
-    | CustomAuthConfig
     | JwtAuthConfig
     | Record<string, any>;
 }

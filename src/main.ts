@@ -1,10 +1,10 @@
 import { NestFactory } from '@nestjs/core';
-import { DynamicMasterModule } from './dynamic-master.module';
+import { CorrectorModule } from './corrector/corrector.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(DynamicMasterModule);
-  // Enable global prefix if needed, currently direct mapping
-  // app.setGlobalPrefix('api');
+  const app = await NestFactory.create(CorrectorModule.forRoot({
+    mappingRepository: {} as any, // Only for demo compilation
+  }));
 
   const port = process.env.PORT || 3001;
   await app.listen(port);

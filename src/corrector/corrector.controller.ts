@@ -52,27 +52,28 @@ export class CorrectorController {
         );
       }
 
-      // 2. Resolve Auth Config
-      // Explicitly construct the AuthConfig structure to avoid 'any' unsafe assignment issues
-      // when typescript tries to infer the union type from partial data.
-      let effectiveAuth: AuthConfig | undefined =
-        mapping.mappingConfig.authConfig;
+      // 2. Resolve Auth Config (DB config + Request overrides)
+      let effectiveAuth: AuthConfig | undefined = mapping.mappingConfig.authConfig;
 
-      if (authType) {
-        // When source overrides, we force the structure
+      if (authType || authConfig) {
+        // Resolve final authType
+        const resolvedAuthType = (authType || authConfig?.authType || effectiveAuth?.authType || 'NONE') as any;
+        
         effectiveAuth = {
-          authType: authType as
-            | 'NONE'
-            | 'API_KEY'
-            | 'BASIC'
-            | 'BEARER_TOKEN'
-            | 'OAUTH2_CLIENT_CREDENTIALS'
-            | 'JWT'
-            | 'CUSTOM',
-          config: (authConfig as Record<string, any>) || {},
+          authType: resolvedAuthType,
+          config: {
+            ...(effectiveAuth?.config || {}),
+            ...(authConfig?.config || authConfig || {}),
+          },
         } as AuthConfig;
+
+        // Clean up config if it contains authType after merge
+        if (effectiveAuth.config && (effectiveAuth.config as any).authType) {
+            delete (effectiveAuth.config as any).authType;
+        }
       }
 
+      // Validate the effective config (with overrides)
       if (effectiveAuth) {
         try {
           const provider = this.authFactory.getProvider(effectiveAuth.authType);
