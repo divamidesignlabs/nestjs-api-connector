@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import axios from 'axios';
 import {
   AuthConfig,
@@ -8,6 +8,7 @@ import {
   OAuth2AuthConfig,
   JwtAuthConfig,
 } from '../interfaces/mapping-config.interface';
+import { MESSAGES, AUTH_TYPES } from '../constants';
 
 export interface AuthContext {
   method?: string;
@@ -32,72 +33,38 @@ export interface AuthProvider {
 
 @Injectable()
 export class AuthStrategyFactory {
+  private readonly providers: Record<string, new () => AuthProvider> = {
+    [AUTH_TYPES.BASIC]: BasicAuthProvider,
+    [AUTH_TYPES.API_KEY]: ApiKeyAuthProvider,
+    [AUTH_TYPES.BEARER_TOKEN]: BearerAuthProvider,
+    [AUTH_TYPES.OAUTH2]: OAuth2Provider,
+    [AUTH_TYPES.JWT]: JwtAuthProvider,
+    [AUTH_TYPES.NONE]: NoAuthProvider,
+  };
+
   getProvider(type: string): AuthProvider {
-    switch (type.toUpperCase()) {
-      case 'BASIC':
-        return new BasicAuthProvider();
-      case 'API_KEY':
-        return new ApiKeyAuthProvider();
-      case 'BEARER_TOKEN':
-        return new BearerAuthProvider();
-      case 'OAUTH2_CLIENT_CREDENTIALS':
-        return new OAuth2Provider();
-      case 'JWT':
-        return new JwtAuthProvider();
-      case 'NONE':
-      default:
-        return new NoAuthProvider();
-    }
+    const ProviderClass = this.providers[type.toUpperCase()] || NoAuthProvider;
+    return new ProviderClass();
   }
 }
 
 export class BearerAuthProvider implements AuthProvider {
-  private static tokenCache: Map<string, { token: string; expiresAt: number }> =
-    new Map();
-
   validate(authConfig: AuthConfig): void {
     const config = (authConfig.config || {}) as BearerAuthConfig;
-    if (!config.token && !config.tokenUrl) {
-      throw new Error(
-        'AuthType BEARER_TOKEN requires either "token" or "tokenUrl" in config',
-      );
+    if (!config.token) {
+      throw new BadRequestException(MESSAGES.ERROR.AUTH_REQUIRED_FIELDS('BEARER_TOKEN', '"token"'));
     }
   }
 
   async inject(
     requestConfig: RequestConfig,
     authConfig: AuthConfig,
-    context?: AuthContext,
   ): Promise<RequestConfig> {
     const config = (authConfig.config || {}) as BearerAuthConfig;
-    
-    // PRIORITY:
-    // 1. context.incomingToken
-    // 2. context.headers.Authorization (if it exists)
-    // 3. Database stored token
-    // 4. Dynamic Token Generation (tokenUrl)
-    
-    let token = context?.incomingToken;
-    
-    if (!token && context?.headers?.Authorization) {
-      const authHeader = context.headers.Authorization as string;
-      if (authHeader.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      }
-    }
+    const token = config.token;
 
     if (!token) {
-      token = config.token;
-    }
-
-    if (!token && config.tokenUrl) {
-      token = await this.getDynamicToken(config);
-    }
-
-    if (!token) {
-      throw new Error(
-        'Bearer token missing and no fallback/generation configured',
-      );
+      throw new UnauthorizedException(MESSAGES.ERROR.AUTH_VALIDATION_FAILED('Bearer token is missing from configuration'));
     }
 
     const headerName = config.headerName || 'Authorization';
@@ -108,61 +75,6 @@ export class BearerAuthProvider implements AuthProvider {
       [headerName]: `${tokenPrefix}${token}`,
     };
     return requestConfig;
-  }
-
-  private async getDynamicToken(config: BearerAuthConfig): Promise<string> {
-    const tokenUrl = config.tokenUrl as string;
-    const cacheKey = tokenUrl + (config.clientId || ''); // Assuming clientId might be mixed in
-    const cached = BearerAuthProvider.tokenCache.get(cacheKey);
-
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.token;
-    }
-
-    try {
-      const response = await axios.post<{
-        accessToken?: { accessToken?: string } | string;
-        access_token?: string;
-        token?: string;
-        data?: { token?: string; accessToken?: { accessToken?: string } };
-        expires_in?: number;
-      }>(tokenUrl, config.loginPayload || config.credentials || {});
-
-      // Safe access specific to the typed response
-      const data = response.data;
-
-      // Handle the case where accessToken might be nested or direct string
-      let rawToken: string | undefined;
-
-      if (typeof data.accessToken === 'string') {
-        rawToken = data.accessToken;
-      } else if (data.accessToken?.accessToken) {
-        rawToken = data.accessToken.accessToken;
-      } else {
-        rawToken =
-          data.access_token ||
-          data.token ||
-          data.data?.token ||
-          data.data?.accessToken?.accessToken;
-      }
-
-      const token = rawToken;
-
-      if (!token) {
-        throw new Error(`Token not found in response from ${tokenUrl}`);
-      }
-
-      const expiresIn = data.expires_in || 3600;
-      BearerAuthProvider.tokenCache.set(cacheKey, {
-        token,
-        expiresAt: Date.now() + expiresIn * 1000 - 60000,
-      });
-
-      return token;
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      throw new Error(`Failed to generate bearer token: ${message}`);
-    }
   }
 }
 
@@ -179,9 +91,7 @@ export class BasicAuthProvider implements AuthProvider {
   validate(authConfig: AuthConfig): void {
     const config = (authConfig.config || {}) as BasicAuthConfig;
     if (!config.username || !config.password) {
-      throw new Error(
-        'AuthType BASIC requires "username" and "password" in config',
-      );
+      throw new BadRequestException(MESSAGES.ERROR.AUTH_REQUIRED_FIELDS('BASIC', '"username" and "password"'));
     }
   }
   inject(
@@ -204,31 +114,23 @@ export class ApiKeyAuthProvider implements AuthProvider {
   validate(authConfig: AuthConfig): void {
     const config = (authConfig.config || {}) as ApiKeyAuthConfig;
     if (!config.keyName || !config.keyValue) {
-      throw new Error(
-        'AuthType API_KEY requires "keyName" and "keyValue" in config',
-      );
+      throw new BadRequestException(MESSAGES.ERROR.AUTH_REQUIRED_FIELDS('API_KEY', '"keyName" and "keyValue"'));
     }
   }
+
   inject(
     requestConfig: RequestConfig,
     authConfig: AuthConfig,
   ): Promise<RequestConfig> {
     const config = (authConfig.config || {}) as ApiKeyAuthConfig;
-    const location = config.location || 'HEADER';
     const keyName = config.keyName || 'X-API-KEY';
     const keyValue = config.keyValue || '';
+    
+    requestConfig.headers = {
+      ...requestConfig.headers,
+      [keyName]: keyValue,
+    };
 
-    if (location === 'HEADER') {
-      requestConfig.headers = {
-        ...requestConfig.headers,
-        [keyName]: keyValue,
-      };
-    } else if (location === 'QUERY') {
-      requestConfig.params = {
-        ...(requestConfig.params || {}),
-        [keyName]: keyValue,
-      };
-    }
     return Promise.resolve(requestConfig);
   }
 }
@@ -239,7 +141,7 @@ export class JwtAuthProvider implements AuthProvider {
     const required = ['issuer', 'audience', 'privateKeyRef'];
     for (const field of required) {
       if (!(config as unknown as Record<string, any>)[field]) {
-        throw new Error(`AuthType JWT requires "${field}" in config`);
+        throw new BadRequestException(MESSAGES.ERROR.AUTH_REQUIRED_FIELDS('JWT', `"${field}"`));
       }
     }
   }
@@ -250,72 +152,61 @@ export class JwtAuthProvider implements AuthProvider {
 }
 
 export class OAuth2Provider implements AuthProvider {
-  private tokenCache: { [key: string]: { token: string; expiresAt: number } } =
-    {};
+  private static tokenCache: Map<string, { token: string; expiresAt: number }> = new Map();
 
   validate(authConfig: AuthConfig): void {
     const config = (authConfig.config || {}) as OAuth2AuthConfig;
     const required = ['tokenUrl', 'clientId', 'clientSecret'];
     for (const field of required) {
-      if (!(config as unknown as Record<string, any>)[field]) {
-        throw new Error(
-          `AuthType OAUTH2_CLIENT_CREDENTIALS requires "${field}" in config`,
-        );
+      if (!(config as any)[field]) {
+        throw new BadRequestException(MESSAGES.ERROR.AUTH_REQUIRED_FIELDS('OAUTH2_CLIENT_CREDENTIALS', `"${field}"`));
       }
     }
   }
 
-  async inject(
-    requestConfig: RequestConfig,
-    authConfig: AuthConfig,
-  ): Promise<RequestConfig> {
+  async inject(requestConfig: RequestConfig, authConfig: AuthConfig): Promise<RequestConfig> {
     const config = (authConfig.config || {}) as OAuth2AuthConfig;
-    const tokenUrl = config.tokenUrl;
-    const clientId = config.clientId;
-    const cacheKey = `${tokenUrl}-${clientId}`;
-    const cached = this.tokenCache[cacheKey];
-    const now = Date.now();
-
-    let token = cached?.token;
-
-    if (!token || cached.expiresAt <= now) {
-      try {
-        if (!tokenUrl) throw new Error('tokenUrl is required');
-        const response = await axios.post<{
-          access_token: string;
-          expires_in?: number;
-        }>(
-          tokenUrl,
-          new URLSearchParams({
-            grant_type: 'client_credentials',
-            client_id: config.clientId || '',
-            client_secret: config.clientSecret || '',
-            scope: config.scope || '',
-          }),
-          {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-          },
-        );
-
-        token = response.data.access_token;
-        const expiresIn = response.data.expires_in || 3600;
-        this.tokenCache[cacheKey] = {
-          token,
-          expiresAt: now + expiresIn * 1000 - 60000,
-        };
-      } catch (error: any) {
-        const message =
-          error instanceof Error ? error.message : 'Unknown error';
-        throw new Error(`Failed to obtain OAuth2 token: ${message}`);
-      }
-    }
+    const token = await this.getAccessToken(config);
 
     requestConfig.headers = {
       ...requestConfig.headers,
       Authorization: `Bearer ${token}`,
     };
     return requestConfig;
+  }
+
+  private async getAccessToken(config: OAuth2AuthConfig): Promise<string> {
+    const { tokenUrl, clientId, clientSecret, scope } = config;
+    const cacheKey = `${tokenUrl}:${clientId}`;
+    const cached = OAuth2Provider.tokenCache.get(cacheKey);
+
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.token;
+    }
+
+    try {
+      const response = await axios.post(
+        tokenUrl,
+        new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: clientId,
+          client_secret: clientSecret,
+          scope: scope || '',
+        }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+      );
+
+      const token = response.data.access_token;
+      const expiresIn = response.data.expires_in || 3600;
+
+      OAuth2Provider.tokenCache.set(cacheKey, {
+        token,
+        expiresAt: Date.now() + expiresIn * 1000 - 60000,
+      });
+
+      return token;
+    } catch (error: any) {
+      throw new UnauthorizedException(MESSAGES.ERROR.AUTH_TOKEN_GENERATION_FAILED(error.message));
+    }
   }
 }

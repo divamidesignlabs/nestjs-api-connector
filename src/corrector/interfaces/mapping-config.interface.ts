@@ -121,11 +121,10 @@ export interface AuthConfig {
 export interface ConnectorRequest {
   connectorKey: string;
   operation?: string;
-  authType?: string; // Optional override from source
-  authConfig?: Record<string, any>; // Optional override from source
+  authConfig?: AuthConfig; // Optional override containing authType and config
   headerData?: Record<string, string>; // Headers to be sent to target
   queryParams?: Record<string, any>; // Query params to be sent to target
-  payload: unknown; // Data to be transformed/sent as body - explicitly unknown to encourage checking
+  payload: unknown; // Data to be transformed/sent as body
 }
 
 export interface MappingConfig {

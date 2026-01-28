@@ -6,6 +6,7 @@ import {
   HttpException,
   BadRequestException,
 } from '@nestjs/common';
+import { MESSAGES, ERROR_TYPES, AUTH_TYPES } from './constants';
 import { CorrectorEngine } from './services/corrector-engine.service';
 import { MappingRegistryService } from './services/mapping-registry.service';
 import {
@@ -26,162 +27,102 @@ export class CorrectorController {
 
   @Post('execute')
   async executeCorrection(@Body() requestData: ConnectorRequest) {
-    const connectorKey = requestData.connectorKey;
-    const operation = requestData.operation;
-    const authType = requestData.authType;
-    const authConfig = requestData.authConfig;
-    const headerData = requestData.headerData;
-    const queryParams = requestData.queryParams as Record<string, any>; // Assert safe usage
-    const payload = requestData.payload; // Assert intended usage of any payload
+    const { connectorKey, authConfig, headerData, queryParams, payload } = requestData;
 
     try {
-      if (!connectorKey) {
-        throw new BadRequestException('connectorKey is required');
-      }
+      if (!connectorKey) throw new BadRequestException(MESSAGES.ERROR.CONNECTOR_KEY_REQUIRED);
 
-      // 1. Fetch Mapping Configuration
+      // 1. Fetch Mapping
       const mapping = await this.mappingRegistry.findByIdOrName(connectorKey);
-
-      if (
-        !mapping ||
-        !mapping.mappingConfig ||
-        !mapping.mappingConfig.targetApi
-      ) {
-        throw new BadRequestException(
-          `Invalid mapping configuration for: ${connectorKey}`,
-        );
+      if (!mapping?.mappingConfig?.targetApi) {
+        throw new BadRequestException(MESSAGES.ERROR.INVALID_MAPPING(connectorKey));
       }
 
-      // 2. Resolve Auth Config (DB config + Request overrides)
-      let effectiveAuth: AuthConfig | undefined = mapping.mappingConfig.authConfig;
-      let incomingAuthType = authType || authConfig?.authType;
-      if(mapping.mappingConfig.authConfig?.authType !== 'NONE' && effectiveAuth?.authType !== incomingAuthType){
+      // 2. Resolve & Validate Auth
+      const dbAuth = mapping.mappingConfig.authConfig;
+      const requestAuth = authConfig;
+      
+      // Strict Check: DB Auth Type cannot be overridden by request if it's not NONE
+      if (dbAuth && dbAuth.authType !== AUTH_TYPES.NONE && requestAuth && requestAuth.authType !== dbAuth.authType) {
         return {
           success: false,
           statusCode: 400,
-          errorType: 'AUTH_MISMATCH',
-          message: `Authentication type mismatch for connector: ${connectorKey}`,
+          errorType: ERROR_TYPES.CLIENT,
+          message: MESSAGES.ERROR.AUTH_MISMATCH(requestAuth.authType, dbAuth.authType),
         };
       }
 
-      if (authType || authConfig) {
-        // Resolve final authType
-        const resolvedAuthType = (effectiveAuth?.authType || 'NONE') as any;
-        
-        effectiveAuth = {
-          authType: resolvedAuthType,
-          config: {
-            ...(effectiveAuth?.config || {}),
-            ...(authConfig?.config || authConfig || {}),
-          },
-        } as AuthConfig;
+      const effectiveAuth = this.resolveAuthConfig(dbAuth, requestAuth);
+      this.validateAuth(effectiveAuth);
 
-        // Clean up config if it contains authType after merge
-        if (effectiveAuth.config && (effectiveAuth.config as any).authType) {
-            delete (effectiveAuth.config as any).authType;
-        }
-      }
-
-      // Validate the effective config (with overrides)
-      if (effectiveAuth) {
-        try {
-          const provider = this.authFactory.getProvider(effectiveAuth.authType);
-          provider.validate(effectiveAuth);
-        } catch (authError) {
-          const message =
-            authError instanceof Error ? authError.message : 'Unknown error';
-          
-          return {
-            success: false,
-            statusCode: 400,
-            errorType: 'AUTH_VALIDATION_FAILED',
-            message: `Authentication Validation Failed: ${message}`,
-          };
-        }
-      }
-
-      const mergedConfig = {
-        ...mapping.mappingConfig,
-        authConfig: effectiveAuth,
-      };
-
-      // 3. Prepare execution context
+      // 3. Execution Context
+      const apiConfig = mapping.mappingConfig.targetApi;
       const context = {
-        method: mergedConfig.targetApi.method,
-        queryParams: {
-          ...mergedConfig.targetApi.queryParams,
-          ...queryParams,
-        },
+        method: apiConfig.method,
+        queryParams: { ...apiConfig.queryParams, ...queryParams },
         headers: headerData || {},
-        operation: operation,
       };
 
-      // 4. Execute
+      // 4. Call Engine
       const result = await this.correctorEngine.execute(
-        mergedConfig,
+        { ...mapping.mappingConfig, authConfig: effectiveAuth },
         payload,
         context,
       );
 
-      return {
-        success: true,
-        statusCode: 200,
-        data: result,
-      };
-    } catch (error: any) {
-      this.logger.debug(`Caught error in controller: ${error.message}`);
-      
-      // Handle known HttpExceptions (like the Auth Mismatch)
-      if (error && typeof error.getStatus === 'function') {
-        const status = error.getStatus();
-        const response = error.getResponse();
-        const message = typeof response === 'object' ? (response as any).message : response;
-        
-        this.logger.warn(`Returning mapped exception: ${status} - ${message}`);
-        return {
-          success: false,
-          statusCode: status,
-          errorType: 'FRAMEWORK_ERROR',
-          message: message,
-        };
-      }
+      return { success: true, statusCode: 200, data: result };
+    } catch (error) {
+      return this.handleError(error);
+    }
+  }
 
-      const axiosError = error as {
-        response?: { status: number; data: unknown };
-        message?: string;
-        stack?: string;
-      };
+  private resolveAuthConfig(dbAuth?: AuthConfig, requestAuth?: AuthConfig): AuthConfig {
+    // Priority: DB Configuration > Request Override > Default NONE
+    const authType = (dbAuth?.authType || requestAuth?.authType || AUTH_TYPES.NONE) as any;
+    
+    return {
+      authType,
+      config: { ...requestAuth?.config, ...dbAuth?.config }, // Merge configs, DB fields take precedence for security
+    };
+  }
 
-      // Handle Target API Errors
-      if (axiosError.response) {
-        const status = axiosError.response.status || 500;
-        const targetErrorData = axiosError.response.data;
-        this.logger.error(
-          `Target API Error [${status}]: ${JSON.stringify(targetErrorData)}`,
-        );
+  private validateAuth(auth: AuthConfig) {
+    if (auth.authType !== AUTH_TYPES.NONE) {
+      const provider = this.authFactory.getProvider(auth.authType);
+      provider.validate(auth);
+    }
+  }
 
-        return {
-          success: false,
-          statusCode: status,
-          errorType: 'TARGET_API_ERROR',
-          targetResponse: targetErrorData,
-        };
-      }
+  private handleError(error: any) {
+    this.logger.error(MESSAGES.LOG.ERROR(error.message), error.stack);
 
-      // Handle unforeseen internal errors
-      const errorMessage =
-        (axiosError.message as string) || 'Unknown internal error';
-      this.logger.error(
-        `Internal Framework Error: ${errorMessage}`,
-        axiosError.stack,
-      );
-      
+    // Case 1: Standard NestJS HttpExceptions (BadRequest, etc.)
+    if (error instanceof HttpException) {
+      const resp = error.getResponse();
       return {
         success: false,
-        statusCode: 500,
-        errorType: 'INTERNAL_CORRECTOR_ERROR',
-        message: errorMessage,
+        statusCode: error.getStatus(),
+        errorType: ERROR_TYPES.CLIENT,
+        message: typeof resp === 'object' ? (resp as any).message || error.message : resp,
       };
     }
+
+    // Case 2: Target API Errors (Axios)
+    if (error.response) {
+      return {
+        success: false,
+        statusCode: error.response.status,
+        errorType: ERROR_TYPES.TARGET_API,
+        targetResponse: error.response.data,
+      };
+    }
+
+    // Case 3: Internal Framework Errors
+    return {
+      success: false,
+      statusCode: 500,
+      errorType: ERROR_TYPES.INTERNAL,
+      message: error.message || MESSAGES.ERROR.INTERNAL_ERROR,
+    };
   }
 }

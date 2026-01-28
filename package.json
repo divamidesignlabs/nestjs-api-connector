@@ -1,8 +1,7 @@
 {
   "name": "nestjs-api-corrector",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Enterprise-grade API Proxy and Transformation Framework for NestJS",
-  "license": "MIT",
   "author": "Divami",
   "keywords": [
     "nestjs",
@@ -20,8 +19,7 @@
   "files": [
     "dist",
     "README.md",
-    "database_init.sql",
-    "LICENSE"
+    "database_init.sql"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

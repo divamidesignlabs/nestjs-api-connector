@@ -1,6 +1,6 @@
 # NestJS Corrector Framework: Deep Technical Execution Flow
 
-This document provides a line-by-line technical breakdown for reviewers, explaining which specific code blocks are executed and what validations are performed at every stage of the request lifecycle.
+This document provides a line-by-line technical breakdown of the framework's internal execution cycle.
 
 ---
 
@@ -8,21 +8,20 @@ This document provides a line-by-line technical breakdown for reviewers, explain
 **File:** `src/corrector/corrector.controller.ts`
 
 ### **1. Configuration Lookup**
-- **Action**: Fetches the mapping from the database using `mappingRegistry.findByIdOrName(connectorKey)`.
-- **Validation**: If no mapping is found or if `targetApi` config is missing, it returns a `400 Bad Request`.
+- **Action**: Fetches mapping from DB via `mappingRegistry.findByIdOrName(connectorKey)`.
+- **Logic**: Supports both UUIDs and human-readable names.
+- **Validation**: Throws `BadRequestException` if `targetApi` config is missing.
 
 ### **2. Authentication Security Policy (Strict DB Priority)**
-- **Code**: `if(mappingConfig.authConfig?.authType !== 'NONE' && effectiveAuth?.authType !== incomingAuthType)`
+- **Logic**: the Framework prioritizes the **Database AuthType** over the Request.
 - **Validation Check**: 
-    - The controller compares the `authType` stored in the DB with the one sent in the request.
-    - **Logic**: If the DB requires authentication, the user MUST send credentials that match that type. Any mismatch (e.g., trying to use API_KEY when the DB requires BEARER) is blocked immediately.
-- **Result**: Returns `400 AUTH_MISMATCH`.
+    - If DB says `NONE`, the request cannot force authentication.
+    - If DB says `BEARER_TOKEN`, the request MUST send a token or the DB must have one.
+- **Enforcement**: If the request tries to override a secure DB authType with a different one, it returns a `400 AUTH_MISMATCH`.
 
 ### **3. Provider-Specific Validation**
 - **Action**: Calls `provider.validate(effectiveAuth)`.
-- **Validation Check**: 
-    - Each Strategy (Bearer, Basic, etc.) checks if its required fields are present (e.g., `Basic` checks for `username` and `password`).
-- **Result**: Returns `400 AUTH_VALIDATION_FAILED` with the specific missing field message.
+- **Check**: Strategies throw `BadRequestException` if required fields (like `token` for Bearer or `username` for Basic) are missing in the configuration merge.
 
 ---
 
@@ -30,54 +29,53 @@ This document provides a line-by-line technical breakdown for reviewers, explain
 **File:** `src/corrector/services/corrector-engine.service.ts`
 
 ### **4. Finalising the HTTP Method**
-- **Logic**: `const effectiveMethod = mapping.targetApi.method;`
-- **Enforcement**: The framework **ignores** any method sent by the client. It strictly uses the method defined in the database configuration.
+- **Enforcement**: The framework strictly uses the method defined in the database (`GET`, `POST`, etc.). It ignores the method of the incoming request to the controller.
 
 ### **5. Dynamic Parameter Resolution**
-- **Action**: Loops through `rawQueryParams` and `pathParams`.
-- **Logic**: If a value starts with `$.` (JSONPath), the engine uses `jsonpath.value(payload, path)` to extract data from the incoming request body.
-- **Validation**: If a required dynamic parameter cannot be resolved, it is skipped or logged as a warning, ensuring the URL remains valid.
+- **Logic**: Resolves `queryParams` and `pathParams` using JSONPath against the incoming payload.
+- **Example**: `url: "api/users/:id"` with `pathParams: { "id": "$.user_id" }` results in a clean outgoing URL.
 
 ---
 
 ## **Phase 3: Data Transformation (The Brain)**
 **File:** `src/corrector/services/transformer.service.ts`
 
-### **6. Object Reshaping Logic**
-The `transformObject` method runs the following validations for every mapped field:
-- **Conditionals**: `if (mapItem.condition)` -> Evaluates logic (e.g., `$.status == 'ACTIVE'`). If false, the field is skipped.
-- **Required Check**: `if (mapItem.required && value === undefined)` -> Logs a warning and ensures data integrity.
-- **Default Application**: `value = mapItem.default ?? value` -> ensures the target system always receives a valid value.
-- **Transformation Functions**: `this.executeCustomLogic(mapItem.transform, value)` -> Runs specific logic like `rounding`, `string conversion`, or `masking`.
+### **6. Object Reshaping Logic (`transformObject`)**
+- **Field-Level Loop**: Iterates through every mapping rule.
+- **Conditionals**: Evaluates "If-Then-Else" logic (e.g., `$.status == 'A'`).
+- **Standardization**: Applies built-in transforms (`roundTo2`, `uppercase`, `toNumber`).
+- **JS Logic**: Executes `CUSTOM` logic blocks using a secure sandboxed function context.
+
+### **7. Bulk Data Optimization (`transformArray`)**
+- **Performance**: Pre-calculates mapping configurations once outside the loop to handle thousands of records with minimal CPU overhead.
+- **Wrapping**: Automatically nests results in an `outputWrapper` if defined.
 
 ---
 
-## **Phase 4: Network & Resilience**
+## **Phase 4: Network & Execution**
 **File:** `src/corrector/services/target-api-caller.service.ts`
 
-### **7. Auth Header Injection**
-- **Action**: The `AuthStrategy` (e.g., `BearerAuthProvider`) injects the final `Authorization` header.
-- **Priority**: System checks `Header > DB Static Token > Token URL`.
+### **8. Auth Header Injection**
+- **Action**: The strategy (e.g., `BearerAuthProvider`) injects the final credentials.
+- **Standard**: Follows the `Authorization: <Prefix> <Value>` standard.
+- **Simplicity**: No longer calls external URLs for tokens; strictly uses static configuration and payload overrides.
 
-### **8. Retry Mechanism**
-- **Code**: `while (attempts <= maxAttempts)`
-- **Logic**: If the `TargetApiCaller` throws a network error, the engine checks the `resilience` config in the DB. It will automatically retry the call `N` times with a delay (in ms) before giving up.
+### **9. Resilience (Retry Loop)**
+- **Logic**: If the target API is unstable, the engine retries the call `N` times with a specified `retryDelayMs`.
 
 ---
 
-## **Phase 5: Seamless Error Handling**
-**File:** `src/corrector/corrector.controller.ts` (Catch Block)
+## **Phase 5: Standardized Error Response**
+**File:** `src/corrector/corrector.controller.ts` (`handleError`)
 
-### **9. Mapped Error Responses**
-- **Logic**: Instead of letting the application crash or throw a generic NestJS error, the controller catches all exceptions in a `try/catch` block.
-- **Conversion**:
-    - **HttpExceptions**: Converted to `FRAMEWORK_ERROR`.
-    - **Axios Errors**: Converted to `TARGET_API_ERROR` (returning the actual status and message from the third-party system).
-- **Benefit**: The consumer always receives a standard JSON object, never a raw HTML error or a cryptic 500 status.
+### **10. Structured Feedback**
+- **CLIENT_ERROR (400/401)**: For missing keys, auth failures, or validation errors.
+- **TARGET_API_ERROR**: Forwards the exact response from the third-party system when it fails.
+- **INTERNAL_ERROR (500)**: Reserved only for unexpected framework crashes.
 
 ---
 
 ## **Reviewer Summary**
-- **Performance**: No audit logging = 0 extra DB writes.
-- **Security**: No `eval()` used. No `ajv` overhead. Strict Auth enforcement in Controller.
-- **Reliability**: Automatic retries and robust parameter resolution ensure high success rates for outbound calls.
+- **Speed**: Optimized array loops and $O(1)$ provider lookups.
+- **Stability**: Standardized NestJS exceptions ensure predictable client responses.
+- **Logic**: Deep path resolution via `jsonpath` ensures we can map any complex JSON tree.

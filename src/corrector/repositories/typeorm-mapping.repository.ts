@@ -4,7 +4,6 @@ import { Repository } from 'typeorm';
 import { IntegrationMapping } from '../entities/integration-mapping.entity';
 import { IntegrationMappingEntity } from '../entities/integration-mapping-typeorm.entity';
 import { IMappingRepository } from '../interfaces/mapping-repository.interface';
-import { MappingConfig } from '../interfaces/mapping-config.interface';
 
 /**
  * TypeORM implementation of IMappingRepository
@@ -16,23 +15,6 @@ export class TypeOrmMappingRepository implements IMappingRepository {
     @InjectRepository(IntegrationMappingEntity)
     private readonly repository: Repository<IntegrationMappingEntity>,
   ) {}
-
-  async create(
-    name: string,
-    config: MappingConfig,
-  ): Promise<IntegrationMapping> {
-    const mapping = this.repository.create({
-      name,
-      sourceSystem: config.sourceSystem,
-      targetSystem: config.targetSystem,
-      mappingConfig: config,
-    });
-    return this.repository.save(mapping);
-  }
-
-  async findOne(id: string): Promise<IntegrationMapping | null> {
-    return this.repository.findOne({ where: { id } });
-  }
 
   async findByIdOrName(idOrName: string): Promise<IntegrationMapping | null> {
     const isUuid =
@@ -51,17 +33,5 @@ export class TypeOrmMappingRepository implements IMappingRepository {
     }
 
     return mapping;
-  }
-
-  async findActive(
-    sourceSystem: string,
-    targetSystem: string,
-  ): Promise<IntegrationMapping | null> {
-    return this.repository.findOne({
-      where: {
-        sourceSystem,
-        targetSystem,
-      },
-    });
   }
 }

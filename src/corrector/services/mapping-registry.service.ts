@@ -5,6 +5,7 @@ import {
   IMappingRepository,
   MAPPING_REPOSITORY,
 } from '../interfaces/mapping-repository.interface';
+import { MESSAGES } from '../constants';
 
 @Injectable()
 export class MappingRegistryService {
@@ -13,42 +14,11 @@ export class MappingRegistryService {
     private readonly mappingRepo: IMappingRepository,
   ) {}
 
-  async create(
-    name: string,
-    config: MappingConfig,
-  ): Promise<IntegrationMapping> {
-    return this.mappingRepo.create(name, config);
-  }
-
-  async findOne(id: string): Promise<IntegrationMapping> {
-    const mapping = await this.mappingRepo.findOne(id);
-    if (!mapping) {
-      throw new NotFoundException(`Mapping with ID ${id} not found`);
-    }
-    return mapping;
-  }
-
   async findByIdOrName(idOrName: string): Promise<IntegrationMapping> {
     const mapping = await this.mappingRepo.findByIdOrName(idOrName);
     if (!mapping) {
       throw new NotFoundException(
-        `Mapping with ID or Name '${idOrName}' not found`,
-      );
-    }
-    return mapping;
-  }
-
-  async findActive(
-    sourceSystem: string,
-    targetSystem: string,
-  ): Promise<IntegrationMapping> {
-    const mapping = await this.mappingRepo.findActive(
-      sourceSystem,
-      targetSystem,
-    );
-    if (!mapping) {
-      throw new NotFoundException(
-        `No mapping found for ${sourceSystem} -> ${targetSystem}`,
+        MESSAGES.ERROR.MAPPING_NOT_FOUND_BY_NAME(idOrName),
       );
     }
     return mapping;

@@ -3,6 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 
 import { TargetApiConfig } from '../interfaces/mapping-config.interface';
+import { MESSAGES } from '../constants';
 
 @Injectable()
 export class TargetApiCaller {
@@ -23,9 +24,7 @@ export class TargetApiCaller {
       params: config.queryParams, // Inject query params from config
     };
 
-    this.logger.debug(
-      `Calling Target API: ${requestConfig.method} ${requestConfig.url}`,
-    );
+    this.logger.debug(MESSAGES.LOG.CALLING_API(requestConfig.method, requestConfig.url));
     this.logger.debug(`Request Config: ${JSON.stringify({
       params: requestConfig.params,
       headers: requestConfig.headers
@@ -42,7 +41,7 @@ export class TargetApiCaller {
         response?: { data: any };
       };
       this.logger.error(
-        `Target API call failed: ${axiosError.message || 'Unknown error'}`,
+        MESSAGES.ERROR.API_EXECUTION_FAILED(axiosError.message || 'Unknown error'),
         axiosError.response?.data,
       );
       throw error;
