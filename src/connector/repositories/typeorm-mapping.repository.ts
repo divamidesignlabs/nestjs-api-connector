@@ -1,19 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { IntegrationMapping } from '../entities/integration-mapping.entity';
-import { IntegrationMappingEntity } from '../entities/integration-mapping-typeorm.entity';
 import { IMappingRepository } from '../interfaces/mapping-repository.interface';
 
 /**
  * TypeORM implementation of IMappingRepository
- * This is provided as a convenience for consumers using TypeORM
+ * This is provided as a convenience for consumers using TypeORM.
+ * It is generic to allow using custom entities or table names.
  */
 @Injectable()
-export class TypeOrmMappingRepository implements IMappingRepository {
+export class TypeOrmMappingRepository<T extends IntegrationMapping = IntegrationMapping> implements IMappingRepository {
   constructor(
-    @InjectRepository(IntegrationMappingEntity)
-    private readonly repository: Repository<IntegrationMappingEntity>,
+    private readonly repository: Repository<T>,
   ) {}
 
   async findByIdOrName(idOrName: string): Promise<IntegrationMapping | null> {
@@ -25,11 +23,15 @@ export class TypeOrmMappingRepository implements IMappingRepository {
     let mapping: IntegrationMapping | null = null;
 
     if (isUuid) {
-      mapping = await this.repository.findOne({ where: { id: idOrName } });
+      mapping = (await this.repository.findOne({
+        where: { id: idOrName } as any,
+      })) as IntegrationMapping;
     }
 
     if (!mapping) {
-      mapping = await this.repository.findOne({ where: { name: idOrName } });
+      mapping = (await this.repository.findOne({
+        where: { name: idOrName } as any,
+      })) as IntegrationMapping;
     }
 
     return mapping;

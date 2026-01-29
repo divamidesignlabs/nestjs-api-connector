@@ -21,4 +21,5 @@ export interface ConnectorModuleOptions {
    * Optional: Global timeout in milliseconds
    */
   globalTimeoutMs?: number;
+  tableName?: string;
 }

@@ -1,9 +1,9 @@
 -- MASTER INITIALIZATION SCRIPT: Table Creation & Initial Seeds
 
-DROP TABLE IF EXISTS integration_mappings_config;
+DROP TABLE IF EXISTS connector_mappings_config;
 
 -- 1. Configuration Mappings Table
-CREATE TABLE IF NOT EXISTS integration_mappings_config (
+CREATE TABLE IF NOT EXISTS connector_mappings_config (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) UNIQUE NOT NULL,
     source_system VARCHAR(255) NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS integration_mappings_config (
 -- 3. Initial Seeds
 
 -- A. JSONPlaceholder Users (GET)
-INSERT INTO integration_mappings_config (id, name, source_system, target_system, mapping_config)
+INSERT INTO connector_mappings_config (id, name, source_system, target_system, mapping_config)
 VALUES (
     'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
     'jsonplaceholder-users',

@@ -32,7 +32,7 @@ npm install nestjs-api-connector
 
 ### 1. Database Setup
 
-You only need one table: `integration_mappings_config`.
+You only need one table: `connector_mappings_config`.
 Refer to `database_init.sql` for the PostgreSQL structure.
 
 ### 2. Import Module in `AppModule`
@@ -70,24 +70,59 @@ import {
 export class AppModule {}
 ```
 
----
+#### B. Using Custom Table Name (Optional)
 
-### 3. Using the Service
-
-Inject `ConnectorEngine` to execute integrations programmatically.
+If you prefer a custom table name (e.g., `my_custom_connectors`):
 
 ```typescript
-@Injectable()
-export class MyService {
-  constructor(private readonly connector: ConnectorEngine) {}
+import { getMappingEntity, TypeOrmMappingRepository } from 'nestjs-api-connector';
 
-  async syncData() {
-    return await this.connector.executeConnector('get-products', {
-      category: 'electronics',
-    });
-  }
-}
+// 1. Create the entity with your custom table name
+const MyCustomEntity = getMappingEntity('my_custom_connectors');
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([MyCustomEntity]),
+    ConnectorModule.forRootAsync({
+      inject: [DataSource],
+      useFactory: (dataSource: DataSource) => ({
+        tableName: 'my_custom_connectors',
+        mappingRepository: new TypeOrmMappingRepository(dataSource.getRepository(MyCustomEntity)),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
 ```
+
+
+---
+
+#### C. Extending with Custom Fields (Optional)
+
+You can add extra columns to your table while keeping the library functional. Just extend the entity:
+
+```typescript
+import { getMappingEntity } from 'nestjs-api-connector';
+import { Entity, Column } from 'typeorm';
+
+// 1. Get the base entity
+const BaseEntity = getMappingEntity('my_extensible_table');
+
+// 2. Extend it
+@Entity('my_extensible_table')
+export class ExtendedEntity extends BaseEntity {
+  @Column({ nullable: true })
+  description: string;
+
+  @Column({ default: 'active' })
+  status: string;
+}
+
+// 3. Use ExtendedEntity in TypeOrmModule and ConnectorModule (as shown above)
+```
+
+
 
 ### 4. Direct API Access
 
