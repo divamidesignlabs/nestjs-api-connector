@@ -2,7 +2,7 @@
 
 **A configuration-driven API integration & transformation framework for NestJS.**
 
-[![npm version](https://badge.fury.io/js/nestjs-api-connector.svg)](https://badge.fury.io/js/nestjs-api-connector)
+[![npm version](https://badge.fury.io/js/@divami-labs/nestjs-api-connector.svg)](https://badge.fury.io/js/@divami-labs/nestjs-api-connector)
 
 
 **nestjs-api-connector** (formerly corrector) acts as an intelligent bridge between your application and external APIs. Instead of writing endless HTTP Services and DTOs, you define integrations in your database and manage transformations dynamically.
